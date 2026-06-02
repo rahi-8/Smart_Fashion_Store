@@ -1,4 +1,4 @@
-// app/(admin)/dashboard.tsx
+//dashboard.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -137,7 +137,6 @@ export default function DashboardScreen() {
     }, [])
   );
 
-  // ✅ FIX 2: navigateTo — leading dot বাদ, সঠিক absolute path
   const navigateTo = (route: string, params?: string) => {
     try {
       if (params) {
@@ -190,7 +189,7 @@ export default function DashboardScreen() {
       }
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Hero Section ─────────────────────────────────────────────── */}
+      {/*  Hero Section */}
       <Animated.View entering={FadeInDown.duration(600).springify()} style={s.heroSection}>
         <LinearGradient
           colors={['#0A1647', '#0D1F6E', '#1034A6']}
@@ -227,7 +226,7 @@ export default function DashboardScreen() {
         </LinearGradient>
       </Animated.View>
 
-      {/* ── Stats Grid ───────────────────────────────────────────────── */}
+      {/* Stats Grid */}
       <View style={s.statsGrid}>
         {[
           {
@@ -292,7 +291,7 @@ export default function DashboardScreen() {
         ))}
       </View>
 
-      {/* ── Quick Stats Row ───────────────────────────────────────────── */}
+      {/*  Quick Stats Row*/}
       <Animated.View entering={SlideInRight.delay(500).springify()} style={s.quickStatsRow}>
         {[
           { icon: 'check-circle', val: `${completionRate}%`, label: 'Completion', bg: '#0D2137', tint: C.cyan },
@@ -310,7 +309,7 @@ export default function DashboardScreen() {
         ))}
       </Animated.View>
 
-      {/* ── Order Status ─────────────────────────────────────────────── */}
+      {/*Order Status*/}
       <Animated.View entering={FadeInUp.delay(600).springify()} style={s.sectionCard}>
         <View style={s.sectionHeader}>
           <Text style={s.sectionTitle}>📊 Order Status</Text>
@@ -360,7 +359,7 @@ export default function DashboardScreen() {
         </View>
       </Animated.View>
 
-      {/* ── Low Stock Alert ───────────────────────────────────────────── */}
+      {/*  Low Stock Alert  */}
       {stats?.lowStockProducts && stats.lowStockProducts > 0 && (
         <Animated.View entering={ZoomIn.delay(700).springify()} style={s.alertCard}>
           <LinearGradient colors={['#7B0000', '#C62828']} style={s.alertGradient}>
@@ -391,7 +390,7 @@ export default function DashboardScreen() {
         </Animated.View>
       )}
 
-      {/* ── Quick Actions ─────────────────────────────────────────────── */}
+      {/* Quick Actions*/}
       <Animated.View entering={FadeInUp.delay(800).springify()} style={s.sectionCard}>
         <Text style={s.sectionTitle}>⚡ Quick Actions</Text>
         <View style={s.actionGrid}>
@@ -420,7 +419,7 @@ export default function DashboardScreen() {
         </View>
       </Animated.View>
 
-      {/* ── Recent Activity ───────────────────────────────────────────── */}
+      {/*  Recent Activity */}
       <Animated.View entering={FadeInUp.delay(900).springify()} style={s.sectionCard}>
         <View style={s.sectionHeader}>
           <Text style={s.sectionTitle}>🕒 Recent Activity</Text>

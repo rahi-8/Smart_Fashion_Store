@@ -1,4 +1,4 @@
-// app/(auth)/verify-otp.tsx - Complete Working Version with Mobile OTP Fix
+// app/(auth)/verify-otp.tsx 
 import {
   View,
   Text,
@@ -29,17 +29,17 @@ import {
   COLLECTIONS,
 } from '../../appwrite/config';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+//  Constants 
 const OTP_EXPIRE_SECONDS = 120;
 
-// ✅ FIXED: Mobile এর জন্য সঠিক IP detection
+
 const getApiUrl = (): string => {
   if (Platform.OS === 'web') {
     return 'http://localhost:3000';
   }
   
-  // ✅ আপনার IP দিন
-  const YOUR_COMPUTER_IP = '192.168.0.105'; // ← এই লাইনটি যোগ করুন
+
+  const YOUR_COMPUTER_IP = '192.168.0.101'; // ← change this line
   
   if (Platform.OS === 'android') {
     // Physical device এর জন্য
@@ -292,7 +292,7 @@ export default function VerifyOTP() {
       console.log('✅ OTP Verified! Mode:', mode);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // ── PASSWORD RESET FLOW ──────────────────────────────────────────────
+      //  PASSWORD RESET FLOW 
       if (mode === 'reset') {
         if (timerRef.current) clearInterval(timerRef.current);
         playSuccess();
@@ -310,7 +310,7 @@ export default function VerifyOTP() {
         return;
       }
 
-      // ── REGISTRATION FLOW ────────────────────────────────────────────────
+      //  REGISTRATION FLOW 
       if (!password) {
         throw new Error('Password is required for registration');
       }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 import { isLoggedIn, getUserRole } from '../appwrite/config';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function RootLayout() {
   const segments = useSegments();
@@ -21,18 +22,21 @@ export default function RootLayout() {
       const inAdminGroup = segments[0] === '(admin)';
       const inTabsGroup = segments[0] === '(tabs)';
 
+      console.log('Auth check:', { loggedIn, inAuthGroup, inAdminGroup, inTabsGroup, segments });
+
       if (!loggedIn && !inAuthGroup) {
         // Not logged in and not in auth screen - redirect to login
         router.replace('/(auth)/login');
       } 
       else if (loggedIn) {
         const role = await getUserRole();
+        console.log('User role:', role);
         
         if (role === 'admin' && !inAdminGroup && !inAuthGroup) {
           // Admin but not in admin area - redirect to dashboard
           router.replace('/(admin)/dashboard');
         } 
-        else if (role !== 'admin' && !inTabsGroup && !inAuthGroup) {
+        else if (role !== 'admin' && role !== null && !inTabsGroup && !inAuthGroup) {
           // Regular user but not in tabs - redirect to home
           router.replace('/(tabs)/home');
         }
@@ -53,11 +57,13 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(admin)" />
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(admin)" />
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </GestureHandlerRootView>
   );
 }

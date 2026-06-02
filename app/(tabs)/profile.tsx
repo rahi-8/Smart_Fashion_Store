@@ -1,4 +1,4 @@
-// app/(tabs)/profile.tsx - ফিচার intact রেখে শুধু বাগ ফিক্স
+// app/(tabs)/profile.tsx 
 import React, { useState, useCallback } from 'react';
 import {
   View,

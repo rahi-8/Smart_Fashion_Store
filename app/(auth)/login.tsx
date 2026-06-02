@@ -51,7 +51,7 @@ export default function Login() {
     return emailRegex.test(email);
   };
 
-  // ✅ Database থেকে user role বের করার ফাংশন
+
   const getUserRoleFromDB = async (userId: string): Promise<string> => {
     try {
       const result = await databases.listDocuments(
@@ -104,12 +104,11 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // ✅ Step 1: Create session (login)
+      
       console.log('🔐 Logging in with:', cleanEmail);
       const session = await createSession(cleanEmail, cleanPassword);
       console.log('✅ Session created:', session.$id);
       
-      // ✅ Step 2: Get current user from Appwrite
       const user = await getCurrentUser();
       console.log('✅ User found:', user?.$id);
       
@@ -117,11 +116,9 @@ export default function Login() {
         throw new Error('User not found');
       }
       
-      // ✅ Step 3: Get user role from database
       const role = await getUserRoleFromDB(user.$id);
       console.log('✅ User role from DB:', role);
       
-      // ✅ Step 4: Store user data in AsyncStorage
       const currentUser = {
         id: user.$id,
         email: user.email,
@@ -133,14 +130,12 @@ export default function Login() {
       await AsyncStorage.setItem('userRole', role);
       console.log('✅ User data saved to AsyncStorage');
       
-      // ✅ Step 5: Save remembered email if needed
       if (rememberMe) {
         await AsyncStorage.setItem('rememberedEmail', cleanEmail);
       } else {
         await AsyncStorage.removeItem('rememberedEmail');
       }
 
-      // ✅ Step 6: Navigate based on role
       if (role === 'admin') {
         console.log('➡️ Navigating to Admin Dashboard');
         router.replace('/(admin)/dashboard');

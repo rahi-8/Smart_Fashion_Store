@@ -1,4 +1,4 @@
-// app/(auth)/register.tsx - সম্পূর্ণ ফিক্স করা OTP Version
+// app/(auth)/register.tsx 
 import {
   View,
   Text,
@@ -21,16 +21,16 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { databases, DATABASE_ID, COLLECTIONS, Query } from '../../appwrite/config';
 
-// ✅ সরাসরি API URL ফাংশন (ডুপ্লিকেট করা হয়েছে)
+
 const getApiUrl = () => {
   if (Platform.OS === 'web') {
     return 'http://localhost:3000';
   }
-  // আপনার কম্পিউটারের সঠিক IP (ipconfig দেখে নিন)
-  return 'http://192.168.0.105:3000';
+
+  return 'http://192.168.0.101:3000';
 };
 
-// ─── Password strength scoring ────────────────────────────────────────────────
+//  Password strength scoring 
 type StrengthLevel = 'Weak' | 'Fair' | 'Good' | 'Strong';
 
 const getStrengthLevel = (checks: Record<string, boolean>): StrengthLevel => {
@@ -48,7 +48,7 @@ const strengthConfig: Record<StrengthLevel, { color: string; width: string }> = 
   Strong: { color: '#4CAF50', width: '100%' },
 };
 
-// ─── Shake animation hook ─────────────────────────────────────────────────────
+// Shake animation hook 
 const useShake = () => {
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const shake = () => {
@@ -64,7 +64,7 @@ const useShake = () => {
   return { shakeAnim, shake };
 };
 
-// ─── Step progress indicator ──────────────────────────────────────────────────
+//  Step progress indicator
 const StepProgress = ({ step, total }: { step: number; total: number }) => (
   <View style={stepStyles.row}>
     {Array.from({ length: total }).map((_, i) => (
@@ -123,7 +123,7 @@ export default function Register() {
     ]).start();
   }, []);
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
+  //  Helpers 
   function validateEmailStr(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
@@ -152,7 +152,7 @@ export default function Register() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  // ─── Check if email already exists ─────────────────────────────────────────
+  //  Check if email already exists 
   const checkEmailExists = async (email: string): Promise<boolean> => {
     try {
       const result = await databases.listDocuments(
@@ -167,7 +167,7 @@ export default function Register() {
     }
   };
 
-  // ─── Send OTP Handler ─────────────────────────────────────────────────────
+  // Send OTP Handler 
   const handleSendOTP = async () => {
     handleHaptic();
     

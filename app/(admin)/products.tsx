@@ -1,6 +1,6 @@
-// app/(admin)/products.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+//product.tsx
 
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, RefreshControl,
   TouchableOpacity, Modal, TextInput, Alert,
@@ -23,14 +23,6 @@ const C = {
   textPrimary: '#E8EAF6', textSecondary: '#9FA8DA', textMuted: '#4A5580', white: '#FFFFFF',
 };
 
-type BubbleProps = { size: number; top?: number; bottom?: number; left?: number; right?: number; opacity?: number; color?: string };
-const Bubble = ({ size, top, bottom, left, right, opacity = 0.12, color = C.blue3 }: BubbleProps) => (
-  <View style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity, top, bottom, left, right }} />
-);
-const GlowRing = ({ size, top, bottom, left, right, opacity = 0.18, color = C.cyan }: BubbleProps) => (
-  <View style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2, borderWidth: 1.5, borderColor: color, opacity, top, bottom, left, right }} />
-);
-
 export default function ProductsScreen() {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -49,7 +41,7 @@ export default function ProductsScreen() {
 
   const [productForm, setProductForm] = useState({
     name: '', price: '', discountPrice: '', description: '', categoryId: '',
-    sizes: [] as string[], colors: [] as string[], stock: '', tags: '',
+    sizes: [] as string[], colors: [] as string[], stock: '',
   });
   const [categoryForm, setCategoryForm] = useState({ name: '', slug: '', description: '' });
   const [customColor, setCustomColor] = useState('');
@@ -110,26 +102,26 @@ export default function ProductsScreen() {
     setRefreshing(false);
   };
 
-  // ✅ Image Upload to Appwrite Storage (Fixed)
+  // ✅ SIMPLE UPLOAD FUNCTION (No FileSystem issues)
   const uploadImageToAppwrite = async (imageUri: string): Promise<string> => {
     try {
       const filename = `product_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
       console.log('📤 Starting upload:', filename);
 
-      const file = {
-        uri: imageUri,
-        name: filename,
-        type: 'image/jpeg',
-      };
+      // Fetch image as blob
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      const file = new File([blob], filename, { type: 'image/jpeg' });
 
-      const response = await storage.createFile(
+      console.log('📄 File size:', file.size, 'bytes');
+
+      const uploadResponse = await storage.createFile(
         STORAGE_BUCKETS.PRODUCT_IMAGES,
         ID.unique(),
-        file as any
+        file
       );
 
-      // Build URL manually
-      const imageUrl = `https://tor.cloud.appwrite.io/v1/storage/buckets/${STORAGE_BUCKETS.PRODUCT_IMAGES}/files/${response.$id}/view?project=69ce028900081643e1c3`;
+      const imageUrl = `https://tor.cloud.appwrite.io/v1/storage/buckets/${STORAGE_BUCKETS.PRODUCT_IMAGES}/files/${uploadResponse.$id}/view?project=69ce028900081643e1c3`;
       console.log('✅ Upload success:', imageUrl);
       return imageUrl;
     } catch (err: any) {
@@ -237,7 +229,7 @@ export default function ProductsScreen() {
   const handleAddProduct = () => {
     setEditingProduct(null);
     setProductForm({
-      name: '', price: '', discountPrice: '', description: '', tags: '',
+      name: '', price: '', discountPrice: '', description: '',
       categoryId: categories[0]?.$id || '', sizes: [], colors: [], stock: ''
     });
     setExistingImages([]);
@@ -252,7 +244,6 @@ export default function ProductsScreen() {
       price: String(product.price),
       discountPrice: product.discountPrice ? String(product.discountPrice) : '',
       description: product.description || '',
-      tags: product.tags || '',
       categoryId: product.categoryId,
       sizes: product.sizes || [],
       colors: product.colors || [],
@@ -333,6 +324,7 @@ export default function ProductsScreen() {
             uploadedUrls.push(url);
           } catch (err) {
             console.error('Failed to upload image:', err);
+            Alert.alert('Upload Error', 'Some images failed to upload');
           }
         }
       }
@@ -361,24 +353,19 @@ export default function ProductsScreen() {
         price: parseFloat(productForm.price),
         discountPrice: productForm.discountPrice ? parseFloat(productForm.discountPrice) : null,
         description: productForm.description,
-        tags: productForm.tags,
         categoryId: productForm.categoryId,
         sizes: productForm.sizes,
         colors: productForm.colors,
         stock: parseInt(productForm.stock) || 0,
         isActive: true,
         images: allImages,
-        updatedAt: new Date().toISOString(),
       };
 
       if (editingProduct) {
         await databases.updateDocument(DATABASE_ID, COLLECTIONS.PRODUCTS, editingProduct.$id, productData);
         Alert.alert('✅ Success', 'Product updated successfully');
       } else {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.PRODUCTS, ID.unique(), {
-          ...productData,
-          createdAt: new Date().toISOString(),
-        });
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.PRODUCTS, ID.unique(), productData);
         Alert.alert('✅ Success', 'Product added successfully');
       }
 
@@ -455,7 +442,6 @@ export default function ProductsScreen() {
       slug, 
       description: categoryForm.description,
       isActive: true,
-      updatedAt: new Date().toISOString(),
     };
 
     try {
@@ -463,10 +449,7 @@ export default function ProductsScreen() {
         await databases.updateDocument(DATABASE_ID, COLLECTIONS.CATEGORIES, editingCategory.$id, data);
         Alert.alert('✅ Success', 'Category updated');
       } else {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.CATEGORIES, ID.unique(), {
-          ...data,
-          createdAt: new Date().toISOString(),
-        });
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.CATEGORIES, ID.unique(), data);
         Alert.alert('✅ Success', 'Category added');
       }
       setCategoryModalVisible(false);
@@ -627,8 +610,11 @@ export default function ProductsScreen() {
         </ScrollView>
       </View>
 
-      {/* Data Table */}
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.cyan} />}>
+      {/* Data Table - FIXED SCROLLING */}
+      <ScrollView 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.cyan} />}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}>
         <DataTable 
           columns={productColumns} 
           data={filteredProducts} 
@@ -638,7 +624,7 @@ export default function ProductsScreen() {
         />
       </ScrollView>
 
-      {/* ========== PRODUCT MODAL ========== */}
+      {/* PRODUCT MODAL  */}
       <Modal animationType="slide" transparent visible={productModalVisible} onRequestClose={() => setProductModalVisible(false)}>
         <View style={s.modalOverlay}>
           <View style={s.modalWrapper}>
@@ -651,7 +637,7 @@ export default function ProductsScreen() {
               </View>
             </LinearGradient>
 
-            <ScrollView style={s.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView style={s.modalBody} showsVerticalScrollIndicator={true} nestedScrollEnabled={true}>
               {/* Category Selection */}
               <Text style={s.label}>Category *</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.categorySelectScroll}>
@@ -692,10 +678,6 @@ export default function ProductsScreen() {
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={s.label}>Stock</Text>
                   <TextInput style={s.input} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" value={productForm.stock} onChangeText={t => setProductForm({ ...productForm, stock: t })} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.label}>Tags</Text>
-                  <TextInput style={s.input} placeholder="comma,separated" placeholderTextColor={C.textMuted} value={productForm.tags} onChangeText={t => setProductForm({ ...productForm, tags: t })} />
                 </View>
               </View>
 
@@ -797,7 +779,7 @@ export default function ProductsScreen() {
         </View>
       </Modal>
 
-      {/* ========== VIEW PRODUCT MODAL ========== */}
+      {/* VIEW PRODUCT MODAL */}
       <Modal animationType="slide" transparent visible={viewModalVisible} onRequestClose={() => setViewModalVisible(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modalWrapper, { maxHeight: '85%' }]}>
@@ -811,7 +793,7 @@ export default function ProductsScreen() {
             </LinearGradient>
 
             {viewingProduct && (
-              <ScrollView style={s.modalBody}>
+              <ScrollView style={s.modalBody} nestedScrollEnabled={true}>
                 {viewingProduct.images?.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.viewImageScroll}>
                     {viewingProduct.images.map((img: string, idx: number) => (
@@ -887,7 +869,7 @@ export default function ProductsScreen() {
         </View>
       </Modal>
 
-      {/* ========== CATEGORY MODAL ========== */}
+      {/* CATEGORY MODAL */}
       <Modal animationType="slide" transparent visible={categoryModalVisible} onRequestClose={() => setCategoryModalVisible(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modalWrapper, { maxHeight: 450 }]}>
@@ -944,7 +926,7 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 10, color: C.white, opacity: 0.8, textAlign: 'center' },
   statDivider: { width: 1, backgroundColor: C.border, marginVertical: 4 },
 
-  filterScroll: { paddingHorizontal: 14, marginTop: 12, marginBottom: 8 },
+  filterScroll: { paddingHorizontal: 14, marginTop: 12, marginBottom: 8, maxHeight: 50 },
   filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: C.surfaceAlt, marginRight: 8, borderWidth: 1, borderColor: C.border },
   filterChipActive: { backgroundColor: C.blue1, borderColor: C.cyan },
   filterChipText: { color: C.textMuted, fontSize: 13 },
@@ -973,14 +955,14 @@ const s = StyleSheet.create({
   modalHeaderContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   modalTitle: { fontSize: 20, fontWeight: '700', color: C.white },
   modalCloseBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
-  modalBody: { padding: 20 },
+  modalBody: { padding: 20, maxHeight: '100%' },
 
   label: { fontSize: 12, fontWeight: '600', color: C.textSecondary, marginBottom: 6, marginTop: 8, textTransform: 'uppercase' },
   input: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 14, color: C.textPrimary, backgroundColor: C.surfaceAlt },
   textArea: { height: 80, textAlignVertical: 'top' },
   row: { flexDirection: 'row', gap: 12 },
 
-  categorySelectScroll: { flexDirection: 'row', marginBottom: 8 },
+  categorySelectScroll: { flexDirection: 'row', marginBottom: 8, maxHeight: 50 },
   categorySelectChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: C.surfaceAlt, marginRight: 8, borderWidth: 1, borderColor: C.border },
   categorySelectChipActive: { backgroundColor: C.blue1, borderColor: C.cyan },
   categorySelectText: { color: C.textMuted, fontSize: 13 },
@@ -1026,7 +1008,6 @@ const s = StyleSheet.create({
   addImageBtn: { width: 80, height: 80, borderRadius: 10, backgroundColor: C.surfaceAlt, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: C.cyan + '60', borderStyle: 'dashed' },
   addImageText: { fontSize: 10, color: C.cyan, marginTop: 4 },
 
-  // View Modal Styles
   viewImageScroll: { flexDirection: 'row', marginBottom: 16 },
   viewImage: { width: 100, height: 100, borderRadius: 10, marginRight: 8 },
   viewProductName: { fontSize: 22, fontWeight: 'bold', color: C.textPrimary, marginBottom: 4 },

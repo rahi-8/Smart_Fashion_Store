@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 
-// ==================== TYPES ====================
+//TYPES 
 
 export interface Product {
   $id?: string;
@@ -87,13 +87,11 @@ export interface Address {
   landmark?: string;
 }
 
-// ==================== HELPER FUNCTIONS ====================
 
-// ফাইলকে base64 তে রূপান্তর (সঠিক পদ্ধতি)
 const fileToBase64 = async (uri: string): Promise<string> => {
   try {
     const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: 'base64',  // স্ট্রিং হিসেবে দিন, EncodingType ব্যবহার করবেন না
+      encoding: 'base64',  
     });
     return base64;
   } catch (error) {
@@ -102,7 +100,7 @@ const fileToBase64 = async (uri: string): Promise<string> => {
   }
 };
 
-// ইমেজ আপলোড (ক্রস-প্ল্যাটফর্ম)
+
 export const uploadProductImage = async (imageUri: string): Promise<string> => {
   try {
     console.log('📸 Uploading image:', imageUri);
@@ -142,7 +140,7 @@ export const uploadProductImage = async (imageUri: string): Promise<string> => {
   }
 };
 
-// একাধিক ইমেজ আপলোড
+
 export const uploadMultipleImages = async (imageUris: string[]): Promise<string[]> => {
   const uploadedUrls: string[] = [];
   for (let i = 0; i < imageUris.length; i++) {
@@ -156,7 +154,7 @@ export const uploadMultipleImages = async (imageUris: string[]): Promise<string[
   return uploadedUrls;
 };
 
-// ইমেজ ডিলিট
+
 export const deleteProductImage = async (imageUrl: string): Promise<boolean> => {
   try {
     // Extract fileId from URL
@@ -174,9 +172,7 @@ export const deleteProductImage = async (imageUrl: string): Promise<boolean> => 
   }
 };
 
-// ==================== PRODUCTS ====================
 
-// সব প্রোডাক্ট পাওয়া
 export const getProducts = async (categoryId?: string): Promise<Product[]> => {
   try {
     const queries: any[] = [Query.orderDesc('$createdAt')];
@@ -193,7 +189,7 @@ export const getProducts = async (categoryId?: string): Promise<Product[]> => {
   }
 };
 
-// সব প্রোডাক্ট পাওয়া (অ্যাক্টিভ না সহ)
+
 export const getAllProducts = async (): Promise<Product[]> => {
   try {
     const response = await databases.listDocuments(DATABASE_ID, COLLECTIONS.PRODUCTS, [Query.orderDesc('$createdAt')]);
@@ -204,7 +200,7 @@ export const getAllProducts = async (): Promise<Product[]> => {
   }
 };
 
-// আইডি দিয়ে প্রোডাক্ট পাওয়া
+
 export const getProductById = async (productId: string): Promise<Product | null> => {
   try {
     const response = await databases.getDocument(DATABASE_ID, COLLECTIONS.PRODUCTS, productId);
@@ -215,7 +211,6 @@ export const getProductById = async (productId: string): Promise<Product | null>
   }
 };
 
-// প্রোডাক্ট এড করা
 export const addProduct = async (
   productData: CreateProductInput,
   imageFiles?: string[]
@@ -255,7 +250,7 @@ export const addProduct = async (
   }
 };
 
-// প্রোডাক্ট আপডেট করা
+
 export const updateProduct = async (
   productId: string,
   updatedData: Partial<CreateProductInput>
@@ -274,7 +269,7 @@ export const updateProduct = async (
   }
 };
 
-// প্রোডাক্ট ডিলিট করা
+
 export const deleteProduct = async (productId: string): Promise<boolean> => {
   try {
     // First get product to delete its images
@@ -296,7 +291,6 @@ export const deleteProduct = async (productId: string): Promise<boolean> => {
 
 // ==================== CATEGORIES ====================
 
-// অ্যাক্টিভ ক্যাটাগরি পাওয়া
 export const getCategories = async (): Promise<Category[]> => {
   try {
     const response = await databases.listDocuments(
@@ -311,7 +305,6 @@ export const getCategories = async (): Promise<Category[]> => {
   }
 };
 
-// সব ক্যাটাগরি পাওয়া
 export const getAllCategories = async (): Promise<Category[]> => {
   try {
     const response = await databases.listDocuments(
@@ -326,7 +319,7 @@ export const getAllCategories = async (): Promise<Category[]> => {
   }
 };
 
-// ক্যাটাগরি এড করা
+
 export const addCategory = async (categoryData: CreateCategoryInput): Promise<Category | null> => {
   try {
     const response = await databases.createDocument(
@@ -347,7 +340,7 @@ export const addCategory = async (categoryData: CreateCategoryInput): Promise<Ca
   }
 };
 
-// ক্যাটাগরি আপডেট করা
+
 export const updateCategory = async (
   categoryId: string, 
   updatedData: Partial<CreateCategoryInput>
@@ -366,7 +359,7 @@ export const updateCategory = async (
   }
 };
 
-// ক্যাটাগরি ডিলিট করা
+// delete catagory
 export const deleteCategory = async (categoryId: string): Promise<boolean> => {
   try {
     await databases.deleteDocument(DATABASE_ID, COLLECTIONS.CATEGORIES, categoryId);
@@ -380,7 +373,6 @@ export const deleteCategory = async (categoryId: string): Promise<boolean> => {
 
 // ==================== STOCK MANAGEMENT ====================
 
-// স্টক আপডেট করা
 export const updateProductStock = async (productId: string, newStock: number): Promise<Product | null> => {
   try {
     const response = await databases.updateDocument(
@@ -396,7 +388,7 @@ export const updateProductStock = async (productId: string, newStock: number): P
   }
 };
 
-// স্টক কমানো
+
 export const decreaseProductStock = async (productId: string, quantity: number): Promise<boolean> => {
   try {
     const product = await getProductById(productId);
@@ -413,7 +405,7 @@ export const decreaseProductStock = async (productId: string, quantity: number):
 
 // ==================== ORDERS ====================
 
-// অর্ডার তৈরি করা
+
 export const createOrder = async (orderData: Omit<Order, '$id' | 'createdAt'>): Promise<Order | null> => {
   try {
     const order = await databases.createDocument(
@@ -434,7 +426,7 @@ export const createOrder = async (orderData: Omit<Order, '$id' | 'createdAt'>): 
   }
 };
 
-// ইউজারের অর্ডার পাওয়া
+
 export const getUserOrders = async (userId: string): Promise<Order[]> => {
   try {
     const response = await databases.listDocuments(
@@ -449,7 +441,7 @@ export const getUserOrders = async (userId: string): Promise<Order[]> => {
   }
 };
 
-// সব অর্ডার পাওয়া (অ্যাডমিন)
+
 export const getAllOrders = async (): Promise<Order[]> => {
   try {
     const response = await databases.listDocuments(
@@ -464,7 +456,7 @@ export const getAllOrders = async (): Promise<Order[]> => {
   }
 };
 
-// অর্ডার স্ট্যাটাস আপডেট করা
+
 export const updateOrderStatus = async (
   orderId: string, 
   status: Order['status']
@@ -481,7 +473,7 @@ export const updateOrderStatus = async (
 
 // ==================== USERS ====================
 
-// ইউজার প্রোফাইল পাওয়া
+
 export const getUserProfile = async () => {
   try {
     const user = await account.get();
@@ -492,7 +484,7 @@ export const getUserProfile = async () => {
   }
 };
 
-// ইউজার রোল আপডেট করা (অ্যাডমিন)
+
 export const makeAdmin = async (userId: string): Promise<boolean> => {
   try {
     // Update user preferences

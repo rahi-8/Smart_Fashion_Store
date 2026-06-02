@@ -1,4 +1,4 @@
-// app/(admin)/settings.tsx - সম্পূর্ণ আপডেটেড ব্যাকএন্ড সংযুক্ত ভার্সন
+// settings.tsx 
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -18,7 +18,7 @@ import { databases, DATABASE_ID, COLLECTIONS, ID } from '../../appwrite/config';
 import { Query } from 'appwrite';
 import { useFocusEffect } from 'expo-router';
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
+//  Palette 
 const C = {
   bg: '#060B1F', surface: '#0D1535', surfaceAlt: '#111C42', border: '#1E2D60',
   blue1: '#1565C0', blue2: '#1976D2', blue3: '#42A5F5', blue4: '#90CAF9',

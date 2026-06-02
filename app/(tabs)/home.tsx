@@ -9,7 +9,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { account, databases, DATABASE_ID, COLLECTIONS } from '../../appwrite/config';
-import { Query } from 'appwrite';
+import { Query, ID } from 'appwrite';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 52) / 2;
@@ -36,50 +36,9 @@ interface Banner { $id?: string; title: string; subtitle?: string; image: string
 interface Coupon { $id?: string; code: string; discountPercent: number; expiryDate: string; minPurchase: number; isActive: boolean; }
 
 // Storage Keys
-export const WISHLIST_KEY = 'wishlist_products';
+const WISHLIST_KEY = 'wishlist_products';
 const CART_KEY = 'cart';
 const RECENTLY_VIEWED_KEY = 'recently_viewed';
-
-// Flash Sale Timer Component
-const FlashSaleTimer = ({ endTime }: { endTime: Date }) => {
-  const [timeLeft, setTimeLeft] = useState({ hours: 0, minutes: 0, seconds: 0 });
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const now = new Date().getTime();
-      const distance = endTime.getTime() - now;
-      if (distance < 0) {
-        clearInterval(timer);
-        setTimeLeft({ hours: 0, minutes: 0, seconds: 0 });
-      } else {
-        setTimeLeft({
-          hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-          minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
-          seconds: Math.floor((distance % (1000 * 60)) / 1000),
-        });
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [endTime]);
-
-  const pad = (n: number) => String(n).padStart(2, '0');
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <View style={timerStyles.box}><Text style={timerStyles.num}>{pad(timeLeft.hours)}</Text></View>
-      <Text style={timerStyles.col}>:</Text>
-      <View style={timerStyles.box}><Text style={timerStyles.num}>{pad(timeLeft.minutes)}</Text></View>
-      <Text style={timerStyles.col}>:</Text>
-      <View style={timerStyles.box}><Text style={timerStyles.num}>{pad(timeLeft.seconds)}</Text></View>
-    </View>
-  );
-};
-
-const timerStyles = StyleSheet.create({
-  box: { backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginHorizontal: 2 },
-  num: { fontSize: 16, fontWeight: '800', color: '#FF6B6B' },
-  col: { fontSize: 18, fontWeight: '800', color: '#fff', marginHorizontal: 2 },
-});
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -95,6 +54,7 @@ export default function HomeScreen() {
   const [flashSaleProducts, setFlashSaleProducts] = useState<Product[]>([]);
   const [recentlyViewed, setRecentlyViewed] = useState<Product[]>([]);
   const [userName, setUserName] = useState('Guest');
+  const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -111,8 +71,8 @@ export default function HomeScreen() {
   const [selectedSize, setSelectedSize] = useState('');
   const [selectedColor, setSelectedColor] = useState('');
   const [modalImageIndex, setModalImageIndex] = useState(0);
-
-  const flashSaleEnd = useRef(new Date(Date.now() + 24 * 3600 * 1000)).current;
+  const [sizeError, setSizeError] = useState('');
+  const [colorError, setColorError] = useState('');
 
   // Auto-scroll banners
   useEffect(() => {
@@ -127,35 +87,65 @@ export default function HomeScreen() {
     return () => clearInterval(interval);
   }, [banners.length]);
 
-  // Load wishlist
+  // Get current user ID
+  const getCurrentUserId = async () => {
+    try {
+      const user = await account.get();
+      setUserId(user.$id);
+      return user.$id;
+    } catch (error) {
+      console.error('Get user error:', error);
+      return null;
+    }
+  };
+
+  // Load wishlist from local storage only (fix 401 error)
   const loadWishlist = async () => {
     try {
       const stored = await AsyncStorage.getItem(WISHLIST_KEY);
       const items: Product[] = stored ? JSON.parse(stored) : [];
       setWishlistIds(items.map(p => p.$id!));
+      console.log('✅ Wishlist loaded from local storage:', items.length, 'items');
     } catch (error) {
       console.error('Load wishlist error:', error);
+      setWishlistIds([]);
     }
   };
 
-  // Toggle wishlist
+  // Toggle wishlist (save to local storage only)
   const toggleWishlist = async (product: Product) => {
     try {
-      const stored = await AsyncStorage.getItem(WISHLIST_KEY);
-      let items: Product[] = stored ? JSON.parse(stored) : [];
-      const exists = items.some(p => p.$id === product.$id);
-      if (exists) {
+      const currentUserId = await getCurrentUserId();
+      if (!currentUserId) {
+        Alert.alert('Login Required', 'Please login to add items to wishlist');
+        router.push('/(auth)/login');
+        return;
+      }
+
+      const isInWishlist = wishlistIds.includes(product.$id!);
+
+      if (isInWishlist) {
+        // Remove from wishlist
+        const stored = await AsyncStorage.getItem(WISHLIST_KEY);
+        let items: Product[] = stored ? JSON.parse(stored) : [];
         items = items.filter(p => p.$id !== product.$id);
+        await AsyncStorage.setItem(WISHLIST_KEY, JSON.stringify(items));
+        
         setWishlistIds(prev => prev.filter(id => id !== product.$id));
         Alert.alert('Removed', `${product.name} removed from favourites`);
       } else {
+        // Add to wishlist
+        const stored = await AsyncStorage.getItem(WISHLIST_KEY);
+        let items: Product[] = stored ? JSON.parse(stored) : [];
         items = [product, ...items];
+        await AsyncStorage.setItem(WISHLIST_KEY, JSON.stringify(items));
+        
         setWishlistIds(prev => [product.$id!, ...prev]);
         Alert.alert('Added', `${product.name} added to favourites!`);
       }
-      await AsyncStorage.setItem(WISHLIST_KEY, JSON.stringify(items));
     } catch (error) {
       console.error('Toggle wishlist error:', error);
+      Alert.alert('Error', 'Failed to update wishlist');
     }
   };
 
@@ -186,6 +176,16 @@ export default function HomeScreen() {
   const addToCart = async (product: Product, size?: string, color?: string) => {
     if (product.stock === 0) {
       Alert.alert('Out of Stock', 'This product is currently out of stock.');
+      return;
+    }
+
+    if (product.sizes && product.sizes.length > 0 && !size) {
+      Alert.alert('Size Required', 'Please select a size before adding to cart.');
+      return;
+    }
+
+    if (product.colors && product.colors.length > 0 && !color) {
+      Alert.alert('Color Required', 'Please select a color before adding to cart.');
       return;
     }
 
@@ -232,6 +232,7 @@ export default function HomeScreen() {
       }
       const user = await account.get();
       setUserName(user.name || user.email?.split('@')[0] || 'Guest');
+      setUserId(user.$id);
     } catch (error) {
       console.error('Load user error:', error);
     }
@@ -326,7 +327,6 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => { loadAllData(); }, []));
 
-  // Filter products
   useEffect(() => {
     let filtered = [...products];
     if (selectedCategory !== 'All') {
@@ -350,8 +350,10 @@ export default function HomeScreen() {
 
   const openProductModal = (product: Product) => {
     setSelectedProduct(product);
-    setSelectedSize(product.sizes?.[0] || '');
-    setSelectedColor(product.colors?.[0] || '');
+    setSelectedSize('');
+    setSelectedColor('');
+    setSizeError('');
+    setColorError('');
     setModalImageIndex(0);
     setModalVisible(true);
     addToRecentlyViewed(product);
@@ -372,7 +374,29 @@ export default function HomeScreen() {
     Alert.alert('Coupon Copied!', `Code: ${code} is ready to use at checkout.`);
   };
 
-  // Render Functions
+  const handleAddToCartFromModal = () => {
+    if (!selectedProduct) return;
+    
+    if (selectedProduct.sizes && selectedProduct.sizes.length > 0 && !selectedSize) {
+      setSizeError('Please select a size');
+      Alert.alert('Size Required', 'Please select a size before adding to cart.');
+      return;
+    }
+    setSizeError('');
+    
+    if (selectedProduct.colors && selectedProduct.colors.length > 0 && !selectedColor) {
+      setColorError('Please select a color');
+      Alert.alert('Color Required', 'Please select a color before adding to cart.');
+      return;
+    }
+    setColorError('');
+    
+    if (selectedProduct.stock > 0) {
+      addToCart(selectedProduct, selectedSize, selectedColor);
+      setModalVisible(false);
+    }
+  };
+
   const renderGridCard = ({ item }: { item: Product }) => {
     const isInWishlist = wishlistIds.includes(item.$id!);
     const discount = getDiscountPercent(item);
@@ -411,16 +435,13 @@ export default function HomeScreen() {
             <Text style={styles.price}>৳{displayPrice.toLocaleString()}</Text>
             {discount > 0 && <Text style={styles.oldPrice}>৳{item.price.toLocaleString()}</Text>}
           </View>
-          {item.sizes?.length > 0 && (
-            <Text style={styles.sizePreview}>{item.sizes.slice(0, 4).join(' · ')}</Text>
-          )}
           <TouchableOpacity
             style={[styles.addToCartButton, item.stock === 0 && styles.disabledButton]}
-            onPress={() => addToCart(item)}
+            onPress={() => openProductModal(item)}
             disabled={item.stock === 0}
           >
             <Ionicons name="cart-outline" size={14} color="#fff" />
-            <Text style={styles.addToCartText}>{item.stock > 0 ? 'Add to Cart' : 'Out of Stock'}</Text>
+            <Text style={styles.addToCartText}>Add to Cart</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -449,10 +470,10 @@ export default function HomeScreen() {
           {discount > 0 && <Text style={styles.horizontalOldPrice}>৳{item.price.toLocaleString()}</Text>}
           <TouchableOpacity
             style={[styles.horizontalAddButton, item.stock === 0 && styles.disabledButton]}
-            onPress={() => addToCart(item)}
+            onPress={() => openProductModal(item)}
             disabled={item.stock === 0}
           >
-            <Text style={styles.horizontalAddText}>{item.stock > 0 ? 'Add to Cart' : 'Sold'}</Text>
+            <Text style={styles.horizontalAddText}>Add to Cart</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -470,7 +491,7 @@ export default function HomeScreen() {
           </View>
         )}
         <Text style={styles.flashName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.flashPrice}>৳{item.discountPrice?.toLocaleString()}</Text>
+        <Text style={styles.flashPrice}>৳{getDisplayPrice(item).toLocaleString()}</Text>
         <Text style={styles.flashOldPrice}>৳{item.price.toLocaleString()}</Text>
         <View style={styles.stockBar}>
           <View style={[styles.stockFill, { width: `${Math.min(100, ((50 - item.stock) / 50) * 100)}%` }]} />
@@ -526,7 +547,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('./(tabs)/favourite')}>
+            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(tabs)/favourites')}>
               <Ionicons name="heart-outline" size={22} color="#19699d" />
               {wishlistIds.length > 0 && (
                 <View style={styles.cartBadge}>
@@ -568,7 +589,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Banners */}
+        {/* Banners - Fixed size */}
         {banners.length > 0 && (
           <View style={styles.bannerSection}>
             <ScrollView
@@ -577,11 +598,11 @@ export default function HomeScreen() {
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               decelerationRate="fast"
-              snapToInterval={width - 40}
-              onMomentumScrollEnd={(e) => setCurrentBannerIndex(Math.round(e.nativeEvent.contentOffset.x / (width - 40)))}
+              snapToInterval={width - 32}
+              onMomentumScrollEnd={(e) => setCurrentBannerIndex(Math.round(e.nativeEvent.contentOffset.x / (width - 32)))}
             >
-              {banners.filter(b => b.isActive).sort((a, b) => a.order - b.order).map(banner => (
-                <TouchableOpacity key={banner.$id} style={styles.bannerCard} activeOpacity={0.95}>
+              {banners.filter(b => b.isActive).sort((a, b) => a.order - b.order).map((banner, index) => (
+                <TouchableOpacity key={banner.$id || index} style={styles.bannerCard} activeOpacity={0.95}>
                   <Image source={{ uri: banner.image }} style={styles.bannerImage} />
                   <View style={styles.bannerOverlay}>
                     <Text style={styles.bannerTitle}>{banner.title}</Text>
@@ -618,31 +639,10 @@ export default function HomeScreen() {
             <FlatList
               data={coupons.slice(0, 5)}
               renderItem={renderCouponCard}
-              keyExtractor={item => item.$id!}
+              keyExtractor={(item, index) => item.$id || index.toString()}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.couponList}
-            />
-          </View>
-        )}
-
-        {/* Flash Sale */}
-        {flashSaleProducts.length > 0 && (
-          <View style={styles.flashSaleSection}>
-            <View style={styles.flashSaleHeader}>
-              <View style={styles.sectionTitleContainer}>
-                <Text style={styles.sectionEmoji}>⚡</Text>
-                <Text style={[styles.sectionTitle, { color: '#fff' }]}>Flash Sale</Text>
-              </View>
-              <FlashSaleTimer endTime={flashSaleEnd} />
-            </View>
-            <FlatList
-              data={flashSaleProducts}
-              renderItem={renderFlashSaleCard}
-              keyExtractor={item => item.$id! + '_flash'}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.flashSaleList}
             />
           </View>
         )}
@@ -673,6 +673,26 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
+        {/* Flash Sale */}
+        {flashSaleProducts.length > 0 && (
+          <View style={styles.flashSaleSection}>
+            <View style={styles.flashSaleHeader}>
+              <View style={styles.sectionTitleContainer}>
+                <Text style={styles.sectionEmoji}>⚡</Text>
+                <Text style={[styles.sectionTitle, { color: '#fff' }]}>Flash Sale</Text>
+              </View>
+            </View>
+            <FlatList
+              data={flashSaleProducts}
+              renderItem={renderFlashSaleCard}
+              keyExtractor={(item, index) => `${item.$id}_flash_${index}`}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.flashSaleList}
+            />
+          </View>
+        )}
+
         {/* Featured Products */}
         {featuredProducts.length > 0 && (
           <View style={styles.section}>
@@ -685,7 +705,7 @@ export default function HomeScreen() {
             <FlatList
               data={featuredProducts}
               renderItem={renderHorizontalCard}
-              keyExtractor={item => item.$id! + '_featured'}
+              keyExtractor={(item, index) => `${item.$id}_featured_${index}`}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
@@ -705,7 +725,7 @@ export default function HomeScreen() {
             <FlatList
               data={trendingProducts}
               renderItem={renderHorizontalCard}
-              keyExtractor={item => item.$id! + '_trending'}
+              keyExtractor={(item, index) => `${item.$id}_trending_${index}`}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
@@ -725,7 +745,7 @@ export default function HomeScreen() {
             <FlatList
               data={recentlyViewed}
               renderItem={renderHorizontalCard}
-              keyExtractor={item => item.$id! + '_recent'}
+              keyExtractor={(item, index) => `${item.$id}_recent_${index}`}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
@@ -754,7 +774,7 @@ export default function HomeScreen() {
             <FlatList
               data={filteredProducts}
               renderItem={renderGridCard}
-              keyExtractor={item => item.$id!}
+              keyExtractor={(item, index) => item.$id || index.toString()}
               numColumns={2}
               scrollEnabled={false}
               contentContainerStyle={styles.gridContainer}
@@ -784,9 +804,9 @@ export default function HomeScreen() {
                   ))}
                 </ScrollView>
                 {selectedProduct.images?.length > 1 && (
-                  <View style={styles.dotsContainer}>
+                  <View style={styles.modalDotsContainer}>
                     {selectedProduct.images.map((_, i) => (
-                      <View key={i} style={[styles.dot, modalImageIndex === i && styles.dotActive]} />
+                      <View key={i} style={[styles.modalDot, modalImageIndex === i && styles.modalDotActive]} />
                     ))}
                   </View>
                 )}
@@ -825,38 +845,58 @@ export default function HomeScreen() {
                   )}
 
                   {/* Size Selection */}
-                  {selectedProduct.sizes?.length > 0 && (
+                  {selectedProduct.sizes && selectedProduct.sizes.length > 0 && (
                     <View style={styles.pickerSection}>
-                      <Text style={styles.pickerLabel}>Size: <Text style={styles.pickerSelected}>{selectedSize}</Text></Text>
+                      <Text style={[styles.pickerLabel, sizeError && styles.errorLabel]}>
+                        Size: <Text style={[styles.pickerSelected, sizeError && styles.errorText]}>{selectedSize || 'Not Selected'}</Text>
+                        {sizeError && <Text style={styles.errorText}> *</Text>}
+                      </Text>
                       <View style={styles.pickerRow}>
                         {selectedProduct.sizes.map(sz => (
                           <TouchableOpacity
                             key={sz}
                             style={[styles.sizeChip, selectedSize === sz && styles.sizeChipActive]}
-                            onPress={() => setSelectedSize(sz)}
+                            onPress={() => {
+                              setSelectedSize(sz);
+                              setSizeError('');
+                            }}
                           >
                             <Text style={[styles.sizeChipText, selectedSize === sz && styles.sizeChipTextActive]}>{sz}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
+                      {sizeError ? <Text style={styles.errorHelperText}>{sizeError}</Text> : null}
                     </View>
                   )}
 
                   {/* Color Selection */}
-                  {selectedProduct.colors?.length > 0 && (
+                  {selectedProduct.colors && selectedProduct.colors.length > 0 && (
                     <View style={styles.pickerSection}>
-                      <Text style={styles.pickerLabel}>Color: <Text style={styles.pickerSelected}>{selectedColor}</Text></Text>
+                      <Text style={[styles.pickerLabel, colorError && styles.errorLabel]}>
+                        Color: <Text style={[styles.pickerSelected, colorError && styles.errorText]}>{selectedColor || 'Not Selected'}</Text>
+                        {colorError && <Text style={styles.errorText}> *</Text>}
+                      </Text>
                       <View style={styles.pickerRow}>
                         {selectedProduct.colors.map(col => (
                           <TouchableOpacity
                             key={col}
                             style={[styles.colorCircle, { backgroundColor: col.toLowerCase() }, selectedColor === col && styles.colorCircleActive]}
-                            onPress={() => setSelectedColor(col)}
+                            onPress={() => {
+                              setSelectedColor(col);
+                              setColorError('');
+                            }}
                           />
                         ))}
                       </View>
+                      {colorError ? <Text style={styles.errorHelperText}>{colorError}</Text> : null}
                     </View>
                   )}
+                  
+                  {(!selectedProduct.sizes || selectedProduct.sizes.length === 0) && 
+                   (!selectedProduct.colors || selectedProduct.colors.length === 0) && (
+                    <Text style={styles.noOptionsText}>No size/color options available</Text>
+                  )}
+                  
                   <View style={{ height: 20 }} />
                 </ScrollView>
 
@@ -869,16 +909,11 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.modalAddToCartButton, selectedProduct.stock === 0 && styles.disabledButton]}
-                    onPress={() => {
-                      if (selectedProduct.stock > 0) {
-                        addToCart(selectedProduct, selectedSize, selectedColor);
-                        setModalVisible(false);
-                      }
-                    }}
+                    onPress={handleAddToCartFromModal}
                     disabled={selectedProduct.stock === 0}
                   >
                     <Ionicons name="cart-outline" size={18} color="#fff" />
-                    <Text style={styles.modalAddToCartText}>{selectedProduct.stock > 0 ? 'Add to Cart' : 'Out of Stock'}</Text>
+                    <Text style={styles.modalAddToCartText}>Add to Cart</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -928,7 +963,6 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f6f9' },
   loadingText: { marginTop: 14, fontSize: 14, color: '#888' },
 
-  // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 50 : 20, paddingBottom: 16, backgroundColor: '#fff' },
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
   avatarPlaceholder: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#19699d', justifyContent: 'center', alignItems: 'center' },
@@ -942,16 +976,14 @@ const styles = StyleSheet.create({
   cartBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#FF6B6B', borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4 },
   cartBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
-  // Search
   searchContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0', gap: 10 },
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f6f8', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   searchInput: { flex: 1, fontSize: 14, color: '#333' },
   filterButton: { width: 42, height: 42, backgroundColor: '#e8f0f8', borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
 
-  // Banners
-  bannerSection: { paddingTop: 16, paddingLeft: 20 },
-  bannerCard: { width: width - 40, borderRadius: 16, overflow: 'hidden', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6 },
-  bannerImage: { width: '100%', height: 190, resizeMode: 'cover' },
+  bannerSection: { paddingTop: 16, paddingHorizontal: 16 },
+  bannerCard: { width: width - 32, borderRadius: 16, overflow: 'hidden', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, marginRight: 16 },
+  bannerImage: { width: width - 32, height: 190, resizeMode: 'cover' },
   bannerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(0,0,0,0.35)' },
   bannerTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
   bannerSubtitle: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
@@ -961,7 +993,6 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#ddd' },
   dotActive: { width: 18, backgroundColor: '#19699d' },
 
-  // Sections
   section: { paddingHorizontal: 20, paddingTop: 22 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   sectionTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -970,7 +1001,6 @@ const styles = StyleSheet.create({
   seeAllText: { fontSize: 13, color: '#19699d', fontWeight: '600' },
   itemCountText: { fontSize: 12, color: '#bbb' },
 
-  // Coupons
   couponList: { paddingRight: 20 },
   couponCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 14, padding: 14, marginRight: 12, width: 260, elevation: 2, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: '#FF6B6B' },
   couponLeft: { alignItems: 'center', marginRight: 12, minWidth: 44 },
@@ -983,7 +1013,6 @@ const styles = StyleSheet.create({
   copyButton: { backgroundColor: '#19699d', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginLeft: 8 },
   copyButtonText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
-  // Flash Sale
   flashSaleSection: { marginTop: 22, backgroundColor: '#1a1a2e', paddingTop: 16, paddingBottom: 20 },
   flashSaleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 14 },
   flashSaleList: { paddingHorizontal: 16, paddingRight: 20 },
@@ -997,14 +1026,12 @@ const styles = StyleSheet.create({
   stockFill: { height: 4, backgroundColor: '#FF6B6B', borderRadius: 2 },
   soldText: { fontSize: 10, color: '#aaa', marginTop: 3 },
 
-  // Categories
   categoriesList: { paddingRight: 20 },
   categoryChip: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 24, backgroundColor: '#fff', marginRight: 10, borderWidth: 1, borderColor: '#e8e8e8', elevation: 1 },
   categoryChipActive: { backgroundColor: '#19699d', borderColor: '#19699d' },
   categoryChipText: { fontSize: 13, fontWeight: '600', color: '#555' },
   categoryChipTextActive: { color: '#fff' },
 
-  // Horizontal Cards
   horizontalList: { paddingRight: 20 },
   horizontalCard: { width: 165, backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', marginRight: 12, elevation: 2 },
   horizontalImage: { width: '100%', height: 130, resizeMode: 'cover', backgroundColor: '#f5f5f5' },
@@ -1017,7 +1044,6 @@ const styles = StyleSheet.create({
   horizontalAddButton: { backgroundColor: '#19699d', paddingVertical: 7, borderRadius: 8, alignItems: 'center', marginTop: 6 },
   horizontalAddText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
-  // Grid Cards
   gridContainer: { paddingBottom: 10 },
   gridRow: { justifyContent: 'space-between' },
   card: { width: CARD_WIDTH, backgroundColor: '#fff', borderRadius: 16, marginBottom: 14, elevation: 2, overflow: 'hidden' },
@@ -1036,17 +1062,14 @@ const styles = StyleSheet.create({
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 4 },
   price: { fontSize: 15, fontWeight: '900', color: '#19699d' },
   oldPrice: { fontSize: 10, color: '#ccc', textDecorationLine: 'line-through' },
-  sizePreview: { fontSize: 10, color: '#ccc', marginBottom: 8 },
   addToCartButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#19699d', paddingVertical: 8, borderRadius: 10, gap: 5 },
   disabledButton: { backgroundColor: '#ccc' },
   addToCartText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
-  // Empty State
   emptyContainer: { alignItems: 'center', paddingVertical: 50 },
   emptyText: { fontSize: 16, color: '#ccc', marginTop: 14, fontWeight: '600' },
   resetText: { fontSize: 14, color: '#19699d', marginTop: 10, fontWeight: '600' },
 
-  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%', paddingBottom: Platform.OS === 'ios' ? 30 : 16 },
   modalImageContainer: { height: 280 },
@@ -1068,6 +1091,9 @@ const styles = StyleSheet.create({
   pickerSection: { marginBottom: 16 },
   pickerLabel: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 10 },
   pickerSelected: { color: '#19699d', fontWeight: '800' },
+  errorLabel: { color: '#FF6B6B' },
+  errorText: { color: '#FF6B6B' },
+  errorHelperText: { fontSize: 12, color: '#FF6B6B', marginTop: 5 },
   pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   sizeChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: '#f5f5f5', borderWidth: 1.5, borderColor: '#e8e8e8' },
   sizeChipActive: { backgroundColor: '#19699d', borderColor: '#19699d' },
@@ -1075,13 +1101,16 @@ const styles = StyleSheet.create({
   sizeChipTextActive: { color: '#fff' },
   colorCircle: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: '#e8e8e8' },
   colorCircleActive: { borderColor: '#19699d', borderWidth: 3 },
+  noOptionsText: { fontSize: 14, color: '#999', textAlign: 'center', marginVertical: 10 },
   modalActions: { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 12, gap: 12, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
   modalWishlistAction: { width: 52, height: 52, borderRadius: 14, backgroundColor: '#f5f5f5', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#e8e8e8' },
   modalWishlistActionActive: { backgroundColor: '#FFE8E8', borderColor: '#FF6B6B' },
   modalAddToCartButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#19699d', paddingVertical: 14, borderRadius: 14, gap: 8 },
   modalAddToCartText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  modalDotsContainer: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 8, gap: 6 },
+  modalDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#ddd' },
+  modalDotActive: { width: 18, backgroundColor: '#19699d' },
 
-  // Coupon Modal
   couponModalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
   couponModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   couponModalTitle: { fontSize: 18, fontWeight: '800', color: '#1a1a2e' },

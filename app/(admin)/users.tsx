@@ -1,4 +1,4 @@
-// app/(admin)/users.tsx - সম্পূর্ণ ফিক্সড ভার্সন
+// users.tsx 
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -23,7 +23,7 @@ import { getAllUsers, updateUserStatus, deleteUser, updateUser } from '../../app
 import { account, databases, DATABASE_ID, COLLECTIONS, ID } from '../../appwrite/config';
 import { Query } from 'appwrite';
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
+// Palette 
 const C = {
   bg: '#060B1F', surface: '#0D1535', surfaceAlt: '#111C42', border: '#1E2D60',
   blue1: '#1565C0', blue2: '#1976D2', blue3: '#42A5F5', blue4: '#90CAF9',
@@ -345,6 +345,26 @@ export default function UsersScreen() {
         </View>
       )
     },
+    {
+      key: 'actions',
+      title: 'Actions',
+      width: 120,
+      render: (item: any) => (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity onPress={() => handleViewUser(item)} style={styles.actionBtn}>
+            <Feather name="eye" size={16} color={C.blue3} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => handleEditUser(item)} style={styles.actionBtn}>
+            <Feather name="edit-2" size={16} color={C.cyan} />
+          </TouchableOpacity>
+          {item.userId !== currentAdminId && (
+            <TouchableOpacity onPress={() => handleDeleteUser(item)} style={styles.actionBtn}>
+              <Feather name="trash-2" size={16} color={C.accentRed} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )
+    },
   ];
 
   return (
@@ -514,7 +534,11 @@ export default function UsersScreen() {
                       </View>
                     </View>
                     <View style={styles.infoRow}>
-                      <Text style={styles.infoLabel}>User ID</Text>
+                      <Text style={styles.infoLabel}>Appwrite ID</Text>
+                      <Text style={styles.infoValue}>{selectedUser.userId?.slice(-12) || 'N/A'}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Document ID</Text>
                       <Text style={styles.infoValue}>{selectedUser.$id?.slice(-12) || 'N/A'}</Text>
                     </View>
                     <View style={styles.infoRow}>
@@ -622,27 +646,27 @@ export default function UsersScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-  <Text style={styles.label}>Role</Text>
-  <View style={styles.roleContainer}>
-    <TouchableOpacity
-      style={[styles.roleOption, editForm.role === 'user' && styles.roleOptionActive]}
-      onPress={() => setEditForm({ ...editForm, role: 'user' })}
-    >
-      <Text style={[styles.roleText, editForm.role === 'user' && styles.roleTextActive]}>
-        User
-      </Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity
-      style={[styles.roleOption, editForm.role === 'admin' && styles.roleOptionActive]}
-      onPress={() => setEditForm({ ...editForm, role: 'admin' })}
-    >
-      <Text style={[styles.roleText, editForm.role === 'admin' && styles.roleTextActive]}>
-        Admin
-      </Text>
-    </TouchableOpacity>
-  </View>
-</View>
+                <Text style={styles.label}>Role</Text>
+                <View style={styles.roleContainer}>
+                  <TouchableOpacity
+                    style={[styles.roleOption, editForm.role === 'user' && styles.roleOptionActive]}
+                    onPress={() => setEditForm({ ...editForm, role: 'user' })}
+                  >
+                    <Text style={[styles.roleOptionText, editForm.role === 'user' && styles.roleOptionTextActive]}>
+                      User
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.roleOption, editForm.role === 'admin' && styles.roleOptionActive]}
+                    onPress={() => setEditForm({ ...editForm, role: 'admin' })}
+                  >
+                    <Text style={[styles.roleOptionText, editForm.role === 'admin' && styles.roleOptionTextActive]}>
+                      Admin
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setEditModalVisible(false)}>
@@ -733,6 +757,9 @@ const styles = StyleSheet.create({
   statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4, alignSelf: 'flex-start' },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11, fontWeight: '600' },
+  
+  actionButtons: { flexDirection: 'row', gap: 12 },
+  actionBtn: { padding: 4 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
   modalWrapper: { backgroundColor: C.surface, borderRadius: 24, width: '90%', maxHeight: '85%', overflow: 'hidden' },
@@ -786,10 +813,4 @@ const styles = StyleSheet.create({
   dangerText: { color: C.accentRed },
   bulkCancelBtn: { marginTop: 10, paddingVertical: 12, width: '100%', alignItems: 'center' },
   bulkCancelText: { color: C.textMuted, fontSize: 14 },
-
-   
-  roleTextActive: {
-    color: C.cyan,
-    fontWeight: '700',
-  },
 });

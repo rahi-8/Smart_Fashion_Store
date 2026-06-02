@@ -1,4 +1,4 @@
-// app/(auth)/reset-password.tsx - সম্পূর্ণ ফিক্সড ও আপডেটেড ভার্সন
+// app/(auth)/reset-password.tsx 
 import {
   View,
   Text,
@@ -17,13 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { account } from '../../appwrite/config';
 
-// API URL for backend (সব জায়গায় consistent)
+// API URL for backend 
 const getApiUrl = () => {
   if (Platform.OS === 'web') {
     return 'http://localhost:3000';
   }
-  // আপনার কম্পিউটারের সঠিক IP (ipconfig থেকে পাওয়া)
-  return 'http://192.168.0.105:3000';
+
+  return 'http://192.168.0.101:3000';
 };
 
 export default function ResetPassword() {
@@ -48,7 +48,6 @@ export default function ResetPassword() {
   });
 
   useEffect(() => {
-    // URL থেকে parameters পাওয়া
     const userIdParam = params.userId as string;
     const secretParam = params.secret as string;
     const emailParam = params.email as string;
@@ -62,13 +61,13 @@ export default function ResetPassword() {
     });
     
     if (userIdParam && secretParam) {
-      // Recovery link থেকে আসা (Appwrite Recovery)
+
       setResetMethod('recovery');
       setUserId(userIdParam);
       setSecret(secretParam);
       console.log('✅ Using Recovery Method');
     } else if (emailParam && verified === 'true') {
-      // OTP পদ্ধতি থেকে আসা
+      // OTP 
       setResetMethod('otp');
       setEmail(emailParam);
       console.log('✅ Using OTP Method, Email:', emailParam);
@@ -98,14 +97,13 @@ export default function ResetPassword() {
            passwordChecks.hasNumber;
   };
 
-  // ✅ Method 1: Appwrite Recovery Link Method
   const resetWithRecovery = async () => {
     console.log('🔄 Resetting password via Recovery Method...');
     await account.updateRecovery(userId, secret, newPassword);
     console.log('✅ Password updated via Recovery!');
   };
 
-  // ✅ Method 2: OTP Method (Backend API Call)
+ 
   const resetWithOTP = async () => {
     console.log('🔄 Resetting password via OTP Method...');
     console.log('📧 Email:', email);

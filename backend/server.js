@@ -8,7 +8,7 @@ const { sendMail } = require('./mail');
 
 const app = express();
 
-// ✅ CORS - সব origin allow করে দিন
+//  CORS 
 app.use(cors({ 
   origin: '*', 
   credentials: true,
@@ -19,7 +19,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ In-memory OTP store (production এ Redis ব্যবহার করুন)
+//  In-memory OTP store 
 let otpStore = {};
 
 // ── Auto-detect local IP ───────────────────────────────────────────────────
@@ -90,7 +90,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  // ✅ FIX: PORT now available after declaration - but for health check, just return config
+  
   res.json({
     status: 'ok',
     timestamp: Date.now(),
@@ -102,7 +102,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ Send OTP - সম্পূর্ণ আপডেটেড
+// ✅ Send OTP 
 app.post('/api/send-otp', async (req, res) => {
   try {
     const { email, name, mode } = req.body;
@@ -188,7 +188,7 @@ app.post('/api/send-otp', async (req, res) => {
   }
 });
 
-// ✅ Verify OTP - সম্পূর্ণ আপডেটেড
+// ✅ Verify OTP 
 app.post('/api/verify-otp', (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -313,7 +313,7 @@ app.post('/api/resend-otp', async (req, res) => {
   }
 });
 
-// ✅ Reset Password after OTP verification
+//  Reset Password after OTP verification
 app.post('/api/reset-password', async (req, res) => {
   try {
     const { email, newPassword } = req.body;
@@ -334,8 +334,6 @@ app.post('/api/reset-password', async (req, res) => {
 
     console.log(`📝 Password reset request for: ${email}`);
 
-    // Note: 실제 password reset করতে Appwrite SDK ব্যবহার করতে হবে
-    // এখানে শুধু log করছি, Appwrite এ update করতে হবে
     
     console.log(`✅ Password reset processed for: ${email}`);
     
@@ -386,7 +384,7 @@ app.delete('/api/admin/delete-user/:userId', async (req, res) => {
     }
     
     const client = new Client()
-      .setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+      .setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://tor.cloud.appwrite.io/v1')
       .setProject(process.env.APPWRITE_PROJECT_ID || '69ce028900081643e1c3')
       .setKey(API_KEY);
     

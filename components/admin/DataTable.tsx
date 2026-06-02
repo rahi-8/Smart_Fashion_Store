@@ -1,4 +1,4 @@
-// components/admin/DataTable.tsx - এই ফাইলটি আপডেট করুন
+// components/admin/DataTable.tsx
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
@@ -18,7 +18,7 @@ interface DataTableProps {
   loading?: boolean;
   onEdit?: (item: any) => void;
   onDelete?: (item: any) => void;
-  onPress?: (item: any) => void;  // ← এই লাইন যোগ করুন
+  onPress?: (item: any) => void;  
 }
 
 export const DataTable: React.FC<DataTableProps> = ({ 
@@ -27,7 +27,7 @@ export const DataTable: React.FC<DataTableProps> = ({
   loading, 
   onEdit, 
   onDelete,
-  onPress  // ← এই লাইন যোগ করুন
+  onPress  
 }) => {
   if (loading) {
     return (

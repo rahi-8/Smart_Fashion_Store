@@ -1,12 +1,11 @@
 // app/utils/apiConfig.ts
 import { Platform } from 'react-native';
 
-// আপনার কম্পিউটারের সঠিক IP
-const COMPUTER_IP = '192.168.0.105';
+
+const COMPUTER_IP = '192.168.0.101';
 const PORT = 3000;
 
 export const getApiUrl = (): string => {
-  // সরাসরি আপনার কম্পিউটারের IP ব্যবহার করুন
   return `http://${COMPUTER_IP}:${PORT}`;
 };
 

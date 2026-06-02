@@ -1,4 +1,4 @@
-// app/index.tsx
+// app/index.tsx 
 import { View, Text, ActivityIndicator } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';

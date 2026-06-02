@@ -1,4 +1,4 @@
-// app/(admin)/orders.tsx — সম্পূর্ণ ফিক্সড (Chat System like)
+// orders.tsx 
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -24,7 +24,7 @@ import { StatusBadge } from '../../components/admin/StatusBadge';
 import { databases, DATABASE_ID, COLLECTIONS, ID } from '../../appwrite/config';
 import { Query } from 'appwrite';
 
-// ─── Palette ──────────────────────────────────────────────────────────────────
+//  Palette 
 const C = {
   bg: '#060B1F', surface: '#0D1535', surfaceAlt: '#111C42', border: '#1E2D60',
   blue1: '#1565C0', blue2: '#1976D2', blue3: '#42A5F5', blue4: '#90CAF9',
@@ -35,7 +35,7 @@ const C = {
   white: '#FFFFFF',
 };
 
-// ─── Status Pipeline ─────────────────────────────────────────────────────────
+// Status Pipeline
 const STATUS_PIPELINE = [
   { key: 'pending', label: 'Pending', icon: 'clock', color: '#FFB300', bg: '#FFB30020', order: 0 },
   { key: 'confirmed', label: 'Confirmed', icon: 'check-circle', color: '#42A5F5', bg: '#42A5F520', order: 1 },
@@ -60,7 +60,7 @@ const getStatusColor = (status: string) => {
   return { bg: config.bg, color: config.color, icon: config.icon, label: config.label };
 };
 
-// ─── Tracking Timeline ───────────────────────────────────────────────────────
+// Tracking Timeline 
 function TrackingTimeline({ currentStatus, timeline }: { currentStatus: string; timeline: any[] }) {
   const steps = STATUS_PIPELINE.filter(s => !['cancelled', 'returned'].includes(s.key));
   const currentIdx = getStatusIndex(currentStatus);
@@ -156,7 +156,7 @@ const tl = StyleSheet.create({
   historyTime: { fontSize: 10, marginTop: 2 },
 });
 
-// ─── Messenger Modal (Chat System like - Both sides) ─────────────────────────
+//  Messenger Modal (Chat System like - Both sides) 
 function MessengerModal({ visible, onClose, order, chatMessages, onSendMessage, updating }: any) {
   const [message, setMessage] = useState('');
   const flatListRef = React.useRef<any>(null);
@@ -932,7 +932,7 @@ export default function OrdersScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// Styles 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   heroHeader: { overflow: 'hidden', paddingHorizontal: 18, paddingTop: Platform.OS === 'ios' ? 20 : 20, paddingBottom: 18 },

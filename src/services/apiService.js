@@ -1,26 +1,24 @@
 // src/services/apiService.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// আপনার কম্পিউটারের নাম (hostname থেকে পাওয়া)
 const COMPUTER_NAME = 'Rahi-123456';
 
-// পোর্ট নম্বর
 const PORT = 3000;
 
-// সম্ভাব্য সব API URLs (IP পরিবর্তন হলেও কাজ করবে)
+
 const POSSIBLE_API_URLS = [
   `http://${COMPUTER_NAME}.local:${PORT}`,      // Best for local network
   `http://${COMPUTER_NAME}.mshome.net:${PORT}`, // Windows Home Network
-  `http://10.251.152.61:${PORT}`,               // আপনার বর্তমান IP
-  `http://192.168.0.113:${PORT}`,               // আপনার পুরনো IP
-  `http://localhost:${PORT}`,                   // Emulator এর জন্য
-  `http://10.0.2.2:${PORT}`,                    // Android Emulator এর জন্য
+  `http://10.251.152.61:${PORT}`,               
+  `http://192.168.0.113:${PORT}`,               
+  `http://localhost:${PORT}`,                   
+  `http://10.0.2.2:${PORT}`,                    
 ];
 
-// ক্যাশে করার জন্য কী
+
 const CACHE_KEY = '@SmartFashion_Working_API_URL';
 
-// URL কাজ করছে কিনা চেক করার ফাংশন
+
 async function isUrlWorking(url) {
   try {
     console.log(`🔍 Checking URL: ${url}`);
@@ -48,10 +46,10 @@ async function isUrlWorking(url) {
   }
 }
 
-// মেইন ফাংশন: কাজ করা URL খুঁজে বের করা
+
 export async function getWorkingApiUrl() {
   try {
-    // ১ম: ক্যাশে চেক করা
+  
     const cachedUrl = await AsyncStorage.getItem(CACHE_KEY);
     if (cachedUrl) {
       console.log(`📦 Checking cached URL: ${cachedUrl}`);
@@ -65,7 +63,7 @@ export async function getWorkingApiUrl() {
       }
     }
     
-    // ২য়: সব URL চেক করা
+  
     console.log('🔍 Checking all possible URLs...');
     for (const url of POSSIBLE_API_URLS) {
       const isValid = await isUrlWorking(url);
@@ -76,7 +74,7 @@ export async function getWorkingApiUrl() {
       }
     }
     
-    // ৩য়: কোনো URL কাজ না করা
+  
     console.log('⚠️ No working URL found, using default');
     return POSSIBLE_API_URLS[0];
     
@@ -86,14 +84,14 @@ export async function getWorkingApiUrl() {
   }
 }
 
-// API URL রিফ্রেশ করার ফাংশন
+
 export async function refreshApiUrl() {
   console.log('🔄 Refreshing API URL...');
   await AsyncStorage.removeItem(CACHE_KEY);
   return await getWorkingApiUrl();
 }
 
-// API কল করার হেলপার ফাংশন
+
 export async function apiRequest(endpoint, options = {}) {
   const baseUrl = await getWorkingApiUrl();
   const url = `${baseUrl}${endpoint}`;

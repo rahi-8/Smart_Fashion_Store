@@ -1,4 +1,4 @@
-// app/(auth)/forgot-password.tsx - Optimized Version
+//forgot-password.tsx 
 import {
   View,
   Text,
@@ -25,11 +25,11 @@ const getApiUrl = () => {
     return 'http://localhost:3000';
   }
   
-  // আপনার কম্পিউটারের সঠিক IP (ipconfig থেকে পাওয়া)
-  const YOUR_COMPUTER_IP = '192.168.0.105';
+  
+  const YOUR_COMPUTER_IP = '192.168.0.101';
   const PORT = 3000;
   
-  // Physical device বা Android emulator
+  
   return `http://${YOUR_COMPUTER_IP}:${PORT}`;
 };
 

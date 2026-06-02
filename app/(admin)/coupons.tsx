@@ -1,21 +1,27 @@
-// app/(admin)/coupons.tsx
-import React, { useState } from 'react';
+// coupons.tsx 
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  Modal,
   TextInput,
+  TouchableOpacity,
   Alert,
-  RefreshControl,
   Switch,
+  Modal,
   Platform,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { databases, DATABASE_ID, COLLECTIONS, ID, Query } from '../../appwrite/config';
+
+// DateTimePicker শুধু mobile এর জন্য ইম্পোর্ট করি
+const DateTimePicker = Platform.OS !== 'web' 
+  ? require('@react-native-community/datetimepicker').default 
+  : null;
 
 const C = {
   bg: '#060B1F',
@@ -38,779 +44,562 @@ const C = {
   white: '#FFFFFF',
 };
 
-const Bubble = ({ size, top, bottom, left, right, opacity = 0.12, color = C.blue3 }: any) => (
-  <View style={{
-    position: 'absolute',
-    width: size,
-    height: size,
-    borderRadius: size / 2,
-    backgroundColor: color,
-    opacity,
-    top, bottom, left, right,
-  }} />
-);
-
 interface Coupon {
-  id: string;
+  $id: string;
   code: string;
-  description: string;
-  discountType: 'percentage' | 'fixed';
-  discountValue: number;
-  minPurchase: number;
-  maxDiscount?: number;
-  startDate: Date;
-  endDate: Date;
+  discount: number;
+  type: 'percentage' | 'fixed';
+  validUntil: string;
   usageLimit: number;
-  usedCount: number;
   isActive: boolean;
-  applicableProducts?: string[];
-  applicableCategories?: string[];
+  minOrderAmount?: number | null;
+  description?: string | null;
+  $createdAt: string;
+  $updatedAt: string;
 }
 
 export default function CouponsScreen() {
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
-  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
-  const [viewModalVisible, setViewModalVisible] = useState(false);
-  const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
-  
-  // Mock Coupons Data - এটাকে আপনার API দিয়ে রিপ্লেস করবেন
-  const [coupons, setCoupons] = useState<Coupon[]>([
-    {
-      id: '1',
-      code: 'WELCOME20',
-      description: '20% off on first purchase',
-      discountType: 'percentage',
-      discountValue: 20,
-      minPurchase: 500,
-      maxDiscount: 1000,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 86400000),
-      usageLimit: 100,
-      usedCount: 45,
-      isActive: true,
-    },
-    {
-      id: '2',
-      code: 'FREESHIP',
-      description: 'Free shipping on orders above ৳1000',
-      discountType: 'fixed',
-      discountValue: 60,
-      minPurchase: 1000,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 15 * 86400000),
-      usageLimit: 200,
-      usedCount: 78,
-      isActive: true,
-    },
-    {
-      id: '3',
-      code: 'SAVE50',
-      description: 'Flat ৳50 off on all orders',
-      discountType: 'fixed',
-      discountValue: 50,
-      minPurchase: 0,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 7 * 86400000),
-      usageLimit: 500,
-      usedCount: 234,
-      isActive: true,
-    },
-  ]);
-
-  const [form, setForm] = useState({
+  const [saving, setSaving] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [formData, setFormData] = useState({
     code: '',
-    description: '',
-    discountType: 'percentage' as 'percentage' | 'fixed',
-    discountValue: '',
-    minPurchase: '',
-    maxDiscount: '',
+    discount: '',
+    type: 'percentage' as 'percentage' | 'fixed',
+    validUntil: '',
     usageLimit: '',
-    startDate: new Date(),
-    endDate: new Date(Date.now() + 30 * 86400000),
+    minOrderAmount: '',
+    description: '',
   });
+
+  const fetchCoupons = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.COUPONS,
+        [Query.orderDesc('$createdAt')]
+      );
+      setCoupons(response.documents as unknown as Coupon[]);
+    } catch (error: any) {
+      console.error('Error fetching coupons:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCoupons();
+  }, [fetchCoupons]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await fetchCoupons();
     setRefreshing(false);
   };
 
-  // Random Coupon Code Generator
-  const generateCouponCode = () => {
-    const prefixes = ['SAVE', 'DEAL', 'OFFER', 'FLAT', 'SUPER', 'MEGA', 'HOT'];
-    const suffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-    return `${prefix}${suffix}`;
-  };
-
-  const handleGenerateCode = () => {
-    setForm({ ...form, code: generateCouponCode() });
+  const resetForm = () => {
+    setFormData({
+      code: '',
+      discount: '',
+      type: 'percentage',
+      validUntil: '',
+      usageLimit: '',
+      minOrderAmount: '',
+      description: '',
+    });
+    setEditingCoupon(null);
   };
 
   const handleAddCoupon = () => {
-    setEditingCoupon(null);
-    setForm({
-      code: '',
-      description: '',
-      discountType: 'percentage',
-      discountValue: '',
-      minPurchase: '',
-      maxDiscount: '',
-      usageLimit: '',
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 86400000),
-    });
+    resetForm();
     setModalVisible(true);
   };
 
   const handleEditCoupon = (coupon: Coupon) => {
     setEditingCoupon(coupon);
-    setForm({
+    setFormData({
       code: coupon.code,
-      description: coupon.description,
-      discountType: coupon.discountType,
-      discountValue: coupon.discountValue.toString(),
-      minPurchase: coupon.minPurchase.toString(),
-      maxDiscount: coupon.maxDiscount?.toString() || '',
+      discount: coupon.discount.toString(),
+      type: coupon.type,
+      validUntil: coupon.validUntil,
       usageLimit: coupon.usageLimit.toString(),
-      startDate: coupon.startDate,
-      endDate: coupon.endDate,
+      minOrderAmount: coupon.minOrderAmount?.toString() || '',
+      description: coupon.description || '',
     });
     setModalVisible(true);
   };
 
-  const handleViewCoupon = (coupon: Coupon) => {
-    setSelectedCoupon(coupon);
-    setViewModalVisible(true);
+  const onDateChange = (event: any, selectedDate: Date | undefined) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      setFormData({ ...formData, validUntil: `${year}-${month}-${day}` });
+    }
   };
 
-  const handleSaveCoupon = () => {
-    // Validation
-    if (!form.code.trim()) {
-      Alert.alert('Error', 'Coupon code is required');
+  const saveCoupon = async () => {
+    if (!formData.code.trim()) {
+      Alert.alert('Error', 'Please enter coupon code');
       return;
     }
-    if (!form.discountValue || parseFloat(form.discountValue) <= 0) {
-      Alert.alert('Error', 'Valid discount value is required');
+    if (!formData.discount || parseFloat(formData.discount) <= 0) {
+      Alert.alert('Error', 'Please enter valid discount amount');
       return;
     }
-    if (form.endDate <= form.startDate) {
-      Alert.alert('Error', 'End date must be after start date');
+    if (!formData.validUntil) {
+      Alert.alert('Error', 'Please enter valid until date');
       return;
     }
 
-    const discountValueNum = parseFloat(form.discountValue);
-    const minPurchaseNum = parseFloat(form.minPurchase) || 0;
-    const usageLimitNum = parseInt(form.usageLimit) || 0;
+    setSaving(true);
 
-    if (editingCoupon) {
-      // Update existing coupon
-      const updatedCoupons = coupons.map(coupon =>
-        coupon.id === editingCoupon.id
-          ? {
-              ...coupon,
-              code: form.code.toUpperCase(),
-              description: form.description,
-              discountType: form.discountType,
-              discountValue: discountValueNum,
-              minPurchase: minPurchaseNum,
-              maxDiscount: form.maxDiscount ? parseFloat(form.maxDiscount) : undefined,
-              startDate: form.startDate,
-              endDate: form.endDate,
-              usageLimit: usageLimitNum,
-            }
-          : coupon
-      );
-      setCoupons(updatedCoupons);
-      Alert.alert('Success', 'Coupon updated successfully');
-    } else {
-      // Check if coupon code already exists
-      if (coupons.some(c => c.code === form.code.toUpperCase())) {
-        Alert.alert('Error', 'Coupon code already exists');
-        return;
+    try {
+      const couponData = {
+        code: formData.code.toUpperCase(),
+        discount: parseFloat(formData.discount),
+        type: formData.type,
+        validUntil: formData.validUntil,
+        usageLimit: parseInt(formData.usageLimit) || 0,
+        isActive: editingCoupon?.isActive ?? true,
+        minOrderAmount: formData.minOrderAmount ? parseFloat(formData.minOrderAmount) : null,
+        description: formData.description || null,
+      };
+
+      if (editingCoupon) {
+        await databases.updateDocument(
+          DATABASE_ID,
+          COLLECTIONS.COUPONS,
+          editingCoupon.$id,
+          couponData
+        );
+        Alert.alert('Success', 'Coupon updated successfully');
+      } else {
+        const existing = await databases.listDocuments(
+          DATABASE_ID,
+          COLLECTIONS.COUPONS,
+          [Query.equal('code', [formData.code.toUpperCase()])]
+        );
+        
+        if (existing.documents.length > 0) {
+          Alert.alert('Error', 'Coupon code already exists');
+          setSaving(false);
+          return;
+        }
+
+        await databases.createDocument(
+          DATABASE_ID,
+          COLLECTIONS.COUPONS,
+          ID.unique(),
+          couponData
+        );
+        Alert.alert('Success', 'Coupon created successfully');
       }
 
-      // Add new coupon
-      const newCoupon: Coupon = {
-        id: Date.now().toString(),
-        code: form.code.toUpperCase(),
-        description: form.description,
-        discountType: form.discountType,
-        discountValue: discountValueNum,
-        minPurchase: minPurchaseNum,
-        maxDiscount: form.maxDiscount ? parseFloat(form.maxDiscount) : undefined,
-        startDate: form.startDate,
-        endDate: form.endDate,
-        usageLimit: usageLimitNum,
-        usedCount: 0,
-        isActive: true,
-      };
-      setCoupons([newCoupon, ...coupons]);
-      Alert.alert('Success', 'Coupon added successfully');
+      setModalVisible(false);
+      resetForm();
+      await fetchCoupons();
+    } catch (error: any) {
+      console.error('Error saving coupon:', error);
+      Alert.alert('Error', error.message || 'Failed to save coupon');
+    } finally {
+      setSaving(false);
     }
-    setModalVisible(false);
   };
 
-  const handleDeleteCoupon = (coupon: Coupon) => {
+  const toggleCouponStatus = async (coupon: Coupon) => {
+    try {
+      await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.COUPONS,
+        coupon.$id,
+        { isActive: !coupon.isActive }
+      );
+      
+      setCoupons(prevCoupons => 
+        prevCoupons.map(c => 
+          c.$id === coupon.$id ? { ...c, isActive: !c.isActive } : c
+        )
+      );
+    } catch (error: any) {
+      console.error('Error updating coupon status:', error);
+      Alert.alert('Error', 'Failed to update coupon status');
+    }
+  };
+
+  const deleteCoupon = (coupon: Coupon) => {
     Alert.alert(
       'Delete Coupon',
-      `Are you sure you want to delete ${coupon.code}?`,
+      `Are you sure you want to delete "${coupon.code}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            setCoupons(coupons.filter(c => c.id !== coupon.id));
-            Alert.alert('Success', 'Coupon deleted');
+          onPress: async () => {
+            try {
+              await databases.deleteDocument(
+                DATABASE_ID,
+                COLLECTIONS.COUPONS,
+                coupon.$id
+              );
+              await fetchCoupons();
+              Alert.alert('Success', 'Coupon deleted successfully');
+            } catch (error: any) {
+              Alert.alert('Error', 'Failed to delete coupon');
+            }
           },
         },
       ]
     );
   };
 
-  const toggleCouponStatus = (coupon: Coupon) => {
-    setCoupons(coupons.map(c =>
-      c.id === coupon.id ? { ...c, isActive: !c.isActive } : c
-    ));
+  const getStats = () => {
+    const total = coupons.length;
+    const active = coupons.filter(c => c.isActive === true).length;
+    return { total, active };
   };
 
-  const getDiscountText = (coupon: Coupon) => {
-    if (coupon.discountType === 'percentage') {
-      return `${coupon.discountValue}% OFF`;
+  const stats = getStats();
+  
+  const isExpired = (validUntil: string) => {
+    if (!validUntil) return false;
+    try {
+      return new Date(validUntil) < new Date();
+    } catch {
+      return false;
     }
-    return `৳${coupon.discountValue} OFF`;
   };
 
-  const getUsageProgress = (coupon: Coupon) => {
-    return (coupon.usedCount / coupon.usageLimit) * 100;
+  const formatNumber = (num: number | null | undefined): string => {
+    if (num === null || num === undefined) return '0';
+    return num.toLocaleString();
   };
 
-  const isExpired = (coupon: Coupon) => {
-    return new Date() > coupon.endDate;
+  // Date picker component (Web vs Mobile)
+  const renderDatePicker = () => {
+    if (Platform.OS === 'web') {
+      // Web এর জন্য HTML date input
+      return (
+        <input
+          type="date"
+          value={formData.validUntil}
+          onChange={(e) => setFormData({ ...formData, validUntil: e.target.value })}
+          style={{
+            width: '100%',
+            padding: 12,
+            borderRadius: 10,
+            border: `1px solid ${C.border}`,
+            backgroundColor: C.surfaceAlt,
+            color: C.textPrimary,
+            fontSize: 14,
+            fontFamily: 'inherit',
+          }}
+          min={new Date().toISOString().split('T')[0]}
+        />
+      );
+    } else {
+      // Mobile এর জন্য DateTimePicker
+      return (
+        <>
+          <TouchableOpacity 
+            style={styles.dateButton} 
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Feather name="calendar" size={20} color={C.cyan} />
+            <Text style={formData.validUntil ? styles.dateText : styles.datePlaceholder}>
+              {formData.validUntil || 'Select expiry date'}
+            </Text>
+          </TouchableOpacity>
+          {showDatePicker && DateTimePicker && (
+            <DateTimePicker
+              value={formData.validUntil ? new Date(formData.validUntil) : new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={onDateChange}
+              minimumDate={new Date()}
+            />
+          )}
+        </>
+      );
+    }
   };
 
-  const getStatusColor = (coupon: Coupon) => {
-    if (!coupon.isActive) return C.accentRed;
-    if (isExpired(coupon)) return C.accentOrange;
-    if (getUsageProgress(coupon) >= 90) return C.accentOrange;
-    return C.accentGreen;
-  };
-
-  const getStatusText = (coupon: Coupon) => {
-    if (!coupon.isActive) return 'Inactive';
-    if (isExpired(coupon)) return 'Expired';
-    if (getUsageProgress(coupon) >= 90) return 'Limited';
-    return 'Active';
-  };
-
-  const stats = {
-    total: coupons.length,
-    active: coupons.filter(c => c.isActive && !isExpired(c)).length,
-    expired: coupons.filter(c => isExpired(c)).length,
-    totalUsed: coupons.reduce((sum, c) => sum + c.usedCount, 0),
-    totalSavings: coupons.reduce((sum, c) => sum + (c.discountValue * c.usedCount), 0),
-  };
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  };
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={C.cyan} />
+        <Text style={styles.loadingText}>Loading coupons...</Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.cyan} colors={[C.cyan]} />}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Hero Header */}
-      <LinearGradient colors={['#0A1647', '#0D1F6E', '#1034A6']} style={styles.hero}>
-        <Bubble size={180} top={-60} right={-50} opacity={0.08} />
-        <Bubble size={120} bottom={-40} left={-35} opacity={0.1} color={C.purple} />
-        <Bubble size={70} top={30} right={90} opacity={0.12} color={C.cyan} />
-        <Bubble size={40} bottom={25} right={160} opacity={0.15} color={C.indigo} />
-        
-        <View style={styles.heroHeader}>
-          <View>
-            <Text style={styles.heroTitle}>🏷️ Coupon Management</Text>
-            <Text style={styles.heroSubtitle}>Create & manage discount coupons</Text>
-          </View>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddCoupon}>
-            <LinearGradient colors={[C.blue2, C.cyan]} style={styles.addButtonGradient}>
-              <Feather name="plus" size={18} color={C.bg} />
-              <Text style={styles.addButtonText}>Add Coupon</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+    <View style={styles.container}>
+      <LinearGradient colors={['#0A1647', '#0D1F6E', '#1034A6']} style={styles.header}>
+        <Text style={styles.headerTitle}>🎫 Coupons & Offers</Text>
+        <Text style={styles.headerSubtitle}>Manage your discount coupons</Text>
+      </LinearGradient>
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.cyan} colors={[C.cyan]} />
+        }
+      >
+        <TouchableOpacity style={styles.addButton} onPress={handleAddCoupon}>
+          <LinearGradient colors={[C.blue2, C.cyan]} style={styles.addButtonGradient}>
+            <Feather name="plus" size={20} color={C.white} />
+            <Text style={styles.addButtonText}>Create New Coupon</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
             <Text style={styles.statNumber}>{stats.total}</Text>
             <Text style={styles.statLabel}>Total Coupons</Text>
           </View>
-          <View style={styles.statBox}>
+          <View style={styles.statCard}>
             <Text style={[styles.statNumber, { color: C.accentGreen }]}>{stats.active}</Text>
             <Text style={styles.statLabel}>Active</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: C.accentOrange }]}>{stats.expired}</Text>
-            <Text style={styles.statLabel}>Expired</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{stats.totalUsed}</Text>
-            <Text style={styles.statLabel}>Times Used</Text>
-          </View>
         </View>
 
-        <View style={styles.savingsCard}>
-          <Feather name="trending-up" size={20} color={C.accentGreen} />
-          <Text style={styles.savingsText}>
-            Total Customer Savings: ৳{stats.totalSavings.toLocaleString()}
-          </Text>
-        </View>
-      </LinearGradient>
-
-      {/* Coupons List */}
-      {coupons.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Feather name="tag" size={60} color={C.textMuted} />
-          <Text style={styles.emptyTitle}>No Coupons Yet</Text>
-          <Text style={styles.emptyText}>Tap the "Add Coupon" button to create your first coupon</Text>
-        </View>
-      ) : (
-        coupons.map((coupon) => {
-          const progress = getUsageProgress(coupon);
-          const statusColor = getStatusColor(coupon);
-          const statusText = getStatusText(coupon);
-          const expired = isExpired(coupon);
-          
-          return (
-            <TouchableOpacity
-              key={coupon.id}
-              style={styles.couponCard}
-              onPress={() => handleViewCoupon(coupon)}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={coupon.isActive && !expired ? [C.surface, C.surfaceAlt] : [C.surfaceAlt, C.surfaceAlt]}
-                style={styles.couponGradient}
-              >
+        {coupons.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Feather name="tag" size={64} color={C.textMuted} />
+            <Text style={styles.emptyText}>No coupons found</Text>
+            <Text style={styles.emptySubText}>Tap "Create New Coupon" to add one</Text>
+          </View>
+        ) : (
+          coupons.map((coupon) => {
+            const expired = isExpired(coupon.validUntil);
+            return (
+              <View key={coupon.$id} style={[styles.couponCard, (!coupon.isActive || expired) && styles.inactiveCard]}>
                 <View style={styles.couponHeader}>
-                  <View style={styles.couponCodeContainer}>
-                    <Text style={styles.couponCode}>{coupon.code}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: statusColor + '20', borderColor: statusColor }]}>
-                      <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusText}</Text>
-                    </View>
+                  <View>
+                    <Text style={styles.couponCode}>{coupon.code || 'N/A'}</Text>
+                    <Text style={styles.couponDiscount}>
+                      {coupon.type === 'percentage' 
+                        ? `${coupon.discount || 0}% OFF` 
+                        : `৳${formatNumber(coupon.discount)} OFF`}
+                    </Text>
                   </View>
                   <Switch
-                    value={coupon.isActive && !expired}
+                    value={coupon.isActive === true && !expired}
                     onValueChange={() => toggleCouponStatus(coupon)}
-                    trackColor={{ false: C.border, true: C.cyan }}
+                    trackColor={{ false: C.textMuted, true: C.accentGreen }}
                     thumbColor={C.white}
-                    disabled={expired}
                   />
                 </View>
-
-                <Text style={styles.couponDescription}>{coupon.description}</Text>
 
                 <View style={styles.couponDetails}>
                   <View style={styles.detailItem}>
-                    <Feather name="tag" size={14} color={C.accentGreen} />
-                    <Text style={styles.detailText}>{getDiscountText(coupon)}</Text>
+                    <Feather name="calendar" size={14} color={C.textMuted} />
+                    <Text style={styles.detailText}>Valid until: {coupon.validUntil || 'N/A'}</Text>
                   </View>
                   <View style={styles.detailItem}>
-                    <Feather name="shopping-bag" size={14} color={C.accentOrange} />
-                    <Text style={styles.detailText}>Min: ৳{coupon.minPurchase}</Text>
+                    <Feather name="hash" size={14} color={C.textMuted} />
+                    <Text style={styles.detailText}>
+                      Usage Limit: {coupon.usageLimit === 0 ? 'Unlimited' : coupon.usageLimit}
+                    </Text>
                   </View>
-                  <View style={styles.detailItem}>
-                    <Feather name="calendar" size={14} color={C.blue3} />
-                    <Text style={styles.detailText}>Expires: {formatDate(coupon.endDate)}</Text>
-                  </View>
+                  {coupon.minOrderAmount && coupon.minOrderAmount > 0 && (
+                    <View style={styles.detailItem}>
+                      <Feather name="shopping-cart" size={14} color={C.textMuted} />
+                      <Text style={styles.detailText}>Min. Order: ৳{formatNumber(coupon.minOrderAmount)}</Text>
+                    </View>
+                  )}
+                  {coupon.description && (
+                    <View style={styles.detailItem}>
+                      <Feather name="info" size={14} color={C.textMuted} />
+                      <Text style={styles.detailText}>{coupon.description}</Text>
+                    </View>
+                  )}
                 </View>
 
-                {/* Usage Progress */}
-                <View style={styles.usageSection}>
-                  <View style={styles.usageHeader}>
-                    <Text style={styles.usageLabel}>Usage</Text>
-                    <Text style={styles.usageCount}>{coupon.usedCount} / {coupon.usageLimit}</Text>
-                  </View>
-                  <View style={styles.progressBar}>
-                    <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%`, backgroundColor: statusColor }]} />
-                  </View>
-                </View>
-
-                {/* Actions */}
-                <View style={styles.cardActions}>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleEditCoupon(coupon)}>
+                <View style={styles.couponFooter}>
+                  <TouchableOpacity style={styles.editButton} onPress={() => handleEditCoupon(coupon)}>
                     <Feather name="edit-2" size={16} color={C.blue3} />
-                    <Text style={[styles.actionText, { color: C.blue3 }]}>Edit</Text>
+                    <Text style={styles.editButtonText}>Edit</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleViewCoupon(coupon)}>
-                    <Feather name="eye" size={16} color={C.cyan} />
-                    <Text style={[styles.actionText, { color: C.cyan }]}>View</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleDeleteCoupon(coupon)}>
+                  <TouchableOpacity style={styles.deleteButton} onPress={() => deleteCoupon(coupon)}>
                     <Feather name="trash-2" size={16} color={C.accentRed} />
-                    <Text style={[styles.actionText, { color: C.accentRed }]}>Delete</Text>
+                    <Text style={styles.deleteButtonText}>Delete</Text>
                   </TouchableOpacity>
                 </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          );
-        })
-      )}
+              </View>
+            );
+          })
+        )}
+        <View style={styles.footer} />
+      </ScrollView>
 
-      {/* Add/Edit Coupon Modal */}
+      {/* Modal */}
       <Modal
         animationType="slide"
-        transparent={true}
+        transparent
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => { setModalVisible(false); resetForm(); }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <LinearGradient colors={['#0A1647', '#0D1F6E']} style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingCoupon ? '✏️ Edit Coupon' : '➕ Create New Coupon'}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Feather name="x" size={24} color={C.white} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}</Text>
+              <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }} style={styles.modalClose}>
+                <Feather name="x" size={24} color={C.textMuted} />
               </TouchableOpacity>
-            </LinearGradient>
+            </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Coupon Code */}
+            <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Coupon Code *</Text>
-              <View style={styles.codeInputRow}>
-                <TextInput
-                  style={[styles.input, styles.codeInput]}
-                  placeholder="e.g., SUMMER2024"
-                  placeholderTextColor={C.textMuted}
-                  value={form.code}
-                  onChangeText={(text) => setForm({ ...form, code: text.toUpperCase() })}
-                  autoCapitalize="characters"
-                />
-                <TouchableOpacity style={styles.generateBtn} onPress={handleGenerateCode}>
-                  <LinearGradient colors={[C.purple, C.indigo]} style={styles.generateBtnGradient}>
-                    <Feather name="shuffle" size={16} color={C.white} />
-                    <Text style={styles.generateBtnText}>Generate</Text>
-                  </LinearGradient>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., SAVE20"
+                placeholderTextColor={C.textMuted}
+                value={formData.code}
+                onChangeText={(text) => setFormData({ ...formData, code: text.toUpperCase() })}
+              />
+
+              <Text style={styles.label}>Discount Amount *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={formData.type === 'percentage' ? "e.g., 20" : "e.g., 100"}
+                placeholderTextColor={C.textMuted}
+                value={formData.discount}
+                onChangeText={(text) => setFormData({ ...formData, discount: text })}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.label}>Discount Type</Text>
+              <View style={styles.typeSelector}>
+                <TouchableOpacity 
+                  style={[styles.typeButton, formData.type === 'percentage' && styles.typeButtonActive]} 
+                  onPress={() => setFormData({ ...formData, type: 'percentage' })}
+                >
+                  <Text style={[styles.typeButtonText, formData.type === 'percentage' && styles.typeButtonTextActive]}>Percentage %</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.typeButton, formData.type === 'fixed' && styles.typeButtonActive]} 
+                  onPress={() => setFormData({ ...formData, type: 'fixed' })}
+                >
+                  <Text style={[styles.typeButtonText, formData.type === 'fixed' && styles.typeButtonTextActive]}>Fixed Amount ৳</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Description */}
-              <Text style={styles.label}>Description</Text>
+              <Text style={styles.label}>Valid Until *</Text>
+              {renderDatePicker()}
+
+              <Text style={styles.label}>Usage Limit (0 = Unlimited)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="100"
+                placeholderTextColor={C.textMuted}
+                value={formData.usageLimit}
+                onChangeText={(text) => setFormData({ ...formData, usageLimit: text })}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.label}>Minimum Order Amount (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 500"
+                placeholderTextColor={C.textMuted}
+                value={formData.minOrderAmount}
+                onChangeText={(text) => setFormData({ ...formData, minOrderAmount: text })}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.label}>Description (Optional)</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
-                placeholder="Describe the coupon offer..."
+                placeholder="Coupon description"
                 placeholderTextColor={C.textMuted}
-                value={form.description}
-                onChangeText={(text) => setForm({ ...form, description: text })}
+                value={formData.description}
+                onChangeText={(text) => setFormData({ ...formData, description: text })}
                 multiline
+                numberOfLines={3}
               />
-
-              {/* Discount Type */}
-              <Text style={styles.label}>Discount Type *</Text>
-              <View style={styles.row}>
-                <TouchableOpacity
-                  style={[styles.typeButton, form.discountType === 'percentage' && styles.typeButtonActive]}
-                  onPress={() => setForm({ ...form, discountType: 'percentage' })}
-                >
-                  <Text style={[styles.typeText, form.discountType === 'percentage' && styles.typeTextActive]}>
-                    Percentage (%)
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeButton, form.discountType === 'fixed' && styles.typeButtonActive]}
-                  onPress={() => setForm({ ...form, discountType: 'fixed' })}
-                >
-                  <Text style={[styles.typeText, form.discountType === 'fixed' && styles.typeTextActive]}>
-                    Fixed Amount (৳)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Discount Value */}
-              <Text style={styles.label}>Discount Value *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={form.discountType === 'percentage' ? 'e.g., 20' : 'e.g., 100'}
-                placeholderTextColor={C.textMuted}
-                keyboardType="numeric"
-                value={form.discountValue}
-                onChangeText={(text) => setForm({ ...form, discountValue: text })}
-              />
-
-              {/* Minimum Purchase */}
-              <Text style={styles.label}>Minimum Purchase (৳)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0 for no minimum"
-                placeholderTextColor={C.textMuted}
-                keyboardType="numeric"
-                value={form.minPurchase}
-                onChangeText={(text) => setForm({ ...form, minPurchase: text })}
-              />
-
-              {/* Maximum Discount (for percentage only) */}
-              {form.discountType === 'percentage' && (
-                <>
-                  <Text style={styles.label}>Maximum Discount (৳)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Optional - max discount amount"
-                    placeholderTextColor={C.textMuted}
-                    keyboardType="numeric"
-                    value={form.maxDiscount}
-                    onChangeText={(text) => setForm({ ...form, maxDiscount: text })}
-                  />
-                </>
-              )}
-
-              {/* Usage Limit */}
-              <Text style={styles.label}>Usage Limit</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Number of times this coupon can be used"
-                placeholderTextColor={C.textMuted}
-                keyboardType="numeric"
-                value={form.usageLimit}
-                onChangeText={(text) => setForm({ ...form, usageLimit: text })}
-              />
-
-              {/* Start Date */}
-              <Text style={styles.label}>Start Date</Text>
-              <TouchableOpacity style={styles.dateButton} onPress={() => setShowStartDatePicker(true)}>
-                <Feather name="calendar" size={18} color={C.cyan} />
-                <Text style={styles.dateText}>{formatDate(form.startDate)}</Text>
-              </TouchableOpacity>
-
-              {/* End Date */}
-              <Text style={styles.label}>End Date *</Text>
-              <TouchableOpacity style={styles.dateButton} onPress={() => setShowEndDatePicker(true)}>
-                <Feather name="calendar" size={18} color={C.accentOrange} />
-                <Text style={styles.dateText}>{formatDate(form.endDate)}</Text>
-              </TouchableOpacity>
-
-              {(showStartDatePicker || showEndDatePicker) && (
-                <DateTimePicker
-                  value={showStartDatePicker ? form.startDate : form.endDate}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, selectedDate) => {
-                    if (showStartDatePicker) {
-                      setShowStartDatePicker(false);
-                      if (selectedDate) setForm({ ...form, startDate: selectedDate });
-                    } else {
-                      setShowEndDatePicker(false);
-                      if (selectedDate) setForm({ ...form, endDate: selectedDate });
-                    }
-                  }}
-                />
-              )}
 
               <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
-                  <Text style={styles.cancelText}>Cancel</Text>
+                <TouchableOpacity 
+                  style={[styles.modalButton, styles.cancelButton]} 
+                  onPress={() => { setModalVisible(false); resetForm(); }}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveCoupon}>
-                  <LinearGradient colors={[C.blue2, C.cyan]} style={styles.saveBtnGradient}>
-                    <Text style={styles.saveText}>{editingCoupon ? 'Update Coupon' : 'Create Coupon'}</Text>
-                  </LinearGradient>
+                <TouchableOpacity 
+                  style={[styles.modalButton, styles.saveButton]} 
+                  onPress={saveCoupon} 
+                  disabled={saving}
+                >
+                  {saving ? <ActivityIndicator size="small" color={C.white} /> : <Text style={styles.saveButtonText}>{editingCoupon ? 'Update' : 'Create'}</Text>}
                 </TouchableOpacity>
               </View>
             </ScrollView>
           </View>
         </View>
       </Modal>
-
-      {/* View Coupon Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={viewModalVisible}
-        onRequestClose={() => setViewModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
-            <LinearGradient colors={['#0A1647', '#0D1F6E']} style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Coupon Details</Text>
-              <TouchableOpacity onPress={() => setViewModalVisible(false)}>
-                <Feather name="x" size={24} color={C.white} />
-              </TouchableOpacity>
-            </LinearGradient>
-
-            {selectedCoupon && (
-              <ScrollView style={styles.modalBody}>
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailLabel}>Coupon Code</Text>
-                  <Text style={styles.detailCode}>{selectedCoupon.code}</Text>
-                </View>
-
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailLabel}>Description</Text>
-                  <Text style={styles.detailText}>{selectedCoupon.description || 'No description'}</Text>
-                </View>
-
-                <View style={styles.detailRow}>
-                  <View style={styles.detailHalf}>
-                    <Text style={styles.detailLabel}>Discount</Text>
-                    <Text style={styles.detailValue}>{getDiscountText(selectedCoupon)}</Text>
-                  </View>
-                  <View style={styles.detailHalf}>
-                    <Text style={styles.detailLabel}>Min Purchase</Text>
-                    <Text style={styles.detailValue}>৳{selectedCoupon.minPurchase}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.detailRow}>
-                  <View style={styles.detailHalf}>
-                    <Text style={styles.detailLabel}>Start Date</Text>
-                    <Text style={styles.detailValue}>{formatDate(selectedCoupon.startDate)}</Text>
-                  </View>
-                  <View style={styles.detailHalf}>
-                    <Text style={styles.detailLabel}>End Date</Text>
-                    <Text style={styles.detailValue}>{formatDate(selectedCoupon.endDate)}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.detailRow}>
-                  <View style={styles.detailHalf}>
-                    <Text style={styles.detailLabel}>Usage Limit</Text>
-                    <Text style={styles.detailValue}>{selectedCoupon.usageLimit}</Text>
-                  </View>
-                  <View style={styles.detailHalf}>
-                    <Text style={styles.detailLabel}>Times Used</Text>
-                    <Text style={styles.detailValue}>{selectedCoupon.usedCount}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailLabel}>Remaining Uses</Text>
-                  <Text style={styles.detailValue}>{selectedCoupon.usageLimit - selectedCoupon.usedCount}</Text>
-                </View>
-
-                <View style={styles.detailCard}>
-                  <Text style={styles.detailLabel}>Status</Text>
-                  <View style={[styles.statusBadgeLarge, { backgroundColor: getStatusColor(selectedCoupon) + '20' }]}>
-                    <Text style={[styles.statusBadgeLargeText, { color: getStatusColor(selectedCoupon) }]}>
-                      {getStatusText(selectedCoupon)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setViewModalVisible(false)}>
-                    <Text style={styles.cancelText}>Close</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.saveBtn} onPress={() => {
-                    setViewModalVisible(false);
-                    handleEditCoupon(selectedCoupon);
-                  }}>
-                    <LinearGradient colors={[C.blue2, C.cyan]} style={styles.saveBtnGradient}>
-                      <Text style={styles.saveText}>Edit Coupon</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <View style={{ height: 30 }} />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  hero: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 20, overflow: 'hidden' },
-  heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  heroTitle: { fontSize: 24, fontWeight: '800', color: C.white, marginBottom: 6 },
-  heroSubtitle: { fontSize: 13, color: C.blue4 },
-  
-  addButton: { borderRadius: 10, overflow: 'hidden' },
-  addButtonGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
-  addButtonText: { color: C.bg, fontWeight: '700', fontSize: 14 },
-  
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginBottom: 12 },
-  statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 10, alignItems: 'center' },
-  statNumber: { fontSize: 18, fontWeight: '800', color: C.white, marginBottom: 4 },
-  statLabel: { fontSize: 10, color: C.textSecondary },
-  
-  savingsCard: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.accentGreen + '15', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.accentGreen + '30' },
-  savingsText: { fontSize: 12, color: C.accentGreen, fontWeight: '600', flex: 1 },
-  
-  couponCard: { marginHorizontal: 12, marginBottom: 12, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.border },
-  couponGradient: { padding: 16 },
-  couponHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  couponCodeContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  couponCode: { fontSize: 18, fontWeight: '800', color: C.cyan, fontFamily: 'monospace' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
-  statusBadgeText: { fontSize: 10, fontWeight: '600' },
-  couponDescription: { fontSize: 13, color: C.textSecondary, marginBottom: 12 },
-  couponDetails: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border },
-  detailItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  detailText: { fontSize: 12, color: C.textPrimary },
-  usageSection: { marginBottom: 14 },
-  usageHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  usageLabel: { fontSize: 11, color: C.textMuted },
-  usageCount: { fontSize: 11, color: C.textSecondary },
-  progressBar: { height: 4, backgroundColor: C.surfaceAlt, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 2 },
-  cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  actionText: { fontSize: 12, fontWeight: '500' },
-  
-  emptyState: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 30 },
-  emptyTitle: { fontSize: 18, fontWeight: '600', color: C.textPrimary, marginTop: 16, marginBottom: 8 },
-  emptyText: { fontSize: 13, color: C.textMuted, textAlign: 'center' },
-  
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: C.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: C.white },
-  modalBody: { padding: 20 },
-  
-  label: { fontSize: 12, fontWeight: '600', color: C.textSecondary, marginBottom: 6, marginTop: 12 },
-  input: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 14, color: C.textPrimary, backgroundColor: C.surfaceAlt },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg },
+  loadingText: { marginTop: 12, fontSize: 14, color: C.cyan, fontWeight: '600' },
+  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 24 },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: C.white, marginBottom: 4 },
+  headerSubtitle: { fontSize: 13, color: C.blue4 },
+  addButton: { margin: 16, borderRadius: 12, overflow: 'hidden' },
+  addButtonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, gap: 8 },
+  addButtonText: { color: C.white, fontWeight: 'bold', fontSize: 16 },
+  statsContainer: { flexDirection: 'row', paddingHorizontal: 12, marginBottom: 16, gap: 10 },
+  statCard: { flex: 1, backgroundColor: C.surface, padding: 16, borderRadius: 14, alignItems: 'center', borderWidth: 1, borderColor: C.border },
+  statNumber: { fontSize: 22, fontWeight: 'bold', color: C.cyan, marginBottom: 4 },
+  statLabel: { fontSize: 11, color: C.textMuted },
+  couponCard: { backgroundColor: C.surface, margin: 12, marginTop: 0, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: C.border },
+  inactiveCard: { opacity: 0.6 },
+  couponHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  couponCode: { fontSize: 18, fontWeight: 'bold', color: C.textPrimary, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  couponDiscount: { fontSize: 13, color: C.accentGreen, marginTop: 4, fontWeight: '600' },
+  couponDetails: { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12, marginTop: 4 },
+  detailItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  detailText: { fontSize: 12, color: C.textSecondary, flex: 1 },
+  couponFooter: { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12, marginTop: 8, gap: 16 },
+  editButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  editButtonText: { fontSize: 13, fontWeight: '600', color: C.blue3 },
+  deleteButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  deleteButtonText: { fontSize: 13, fontWeight: '600', color: C.accentRed },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', padding: 50 },
+  emptyText: { fontSize: 18, fontWeight: 'bold', color: C.textSecondary, marginTop: 16 },
+  emptySubText: { fontSize: 14, color: C.textMuted, marginTop: 8 },
+  footer: { height: 40 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center' },
+  modalContent: { backgroundColor: C.surface, margin: 20, borderRadius: 20, padding: 20, maxHeight: '85%', borderWidth: 1, borderColor: C.border },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: C.textPrimary },
+  modalClose: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surfaceAlt, justifyContent: 'center', alignItems: 'center' },
+  label: { fontSize: 13, fontWeight: 'bold', marginBottom: 6, marginTop: 12, color: C.textSecondary },
+  input: { borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, fontSize: 14, backgroundColor: C.surfaceAlt, color: C.textPrimary },
   textArea: { height: 80, textAlignVertical: 'top' },
-  
-  codeInputRow: { flexDirection: 'row', gap: 10 },
-  codeInput: { flex: 2 },
-  generateBtn: { flex: 1, borderRadius: 10, overflow: 'hidden' },
-  generateBtnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 6 },
-  generateBtnText: { color: C.white, fontSize: 12, fontWeight: '600' },
-  
-  row: { flexDirection: 'row', gap: 12 },
-  typeButton: { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: C.surfaceAlt, alignItems: 'center', borderWidth: 1, borderColor: C.border },
+  typeSelector: { flexDirection: 'row', gap: 10, marginTop: 5 },
+  typeButton: { flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: C.border, alignItems: 'center', backgroundColor: C.surfaceAlt },
   typeButtonActive: { backgroundColor: C.blue1, borderColor: C.cyan },
-  typeText: { fontSize: 13, color: C.textSecondary },
-  typeTextActive: { color: C.white, fontWeight: '600' },
-  
-  dateButton: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, backgroundColor: C.surfaceAlt },
+  typeButtonText: { color: C.textSecondary, fontWeight: '600' },
+  typeButtonTextActive: { color: C.white },
+  dateButton: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, backgroundColor: C.surfaceAlt, gap: 10 },
   dateText: { fontSize: 14, color: C.textPrimary, flex: 1 },
-  
-  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 24, marginBottom: 30 },
-  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: C.surfaceAlt, alignItems: 'center' },
-  cancelText: { color: C.textSecondary, fontSize: 14, fontWeight: '500' },
-  saveBtn: { flex: 1, borderRadius: 10, overflow: 'hidden' },
-  saveBtnGradient: { paddingVertical: 12, alignItems: 'center' },
-  saveText: { color: C.bg, fontSize: 14, fontWeight: '700' },
-  
-  // View Modal Styles
-  detailCard: { backgroundColor: C.surfaceAlt, borderRadius: 12, padding: 14, marginBottom: 12 },
-  detailCode: { fontSize: 24, fontWeight: '800', color: C.cyan, fontFamily: 'monospace', marginTop: 4 },
-  detailRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  detailHalf: { flex: 1, backgroundColor: C.surfaceAlt, borderRadius: 12, padding: 14 },
-  detailLabel: { fontSize: 11, color: C.textMuted, marginBottom: 6 },
-  detailValue: { fontSize: 16, fontWeight: '600', color: C.textPrimary },
-  statusBadgeLarge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start' },
-  statusBadgeLargeText: { fontSize: 13, fontWeight: '600' },
+  datePlaceholder: { fontSize: 14, color: C.textMuted, flex: 1 },
+  modalButtons: { flexDirection: 'row', gap: 12, marginTop: 20, marginBottom: 10 },
+  modalButton: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  cancelButton: { backgroundColor: C.surfaceAlt, borderWidth: 1, borderColor: C.border },
+  cancelButtonText: { color: C.textSecondary, fontWeight: 'bold' },
+  saveButton: { backgroundColor: C.blue1 },
+  saveButtonText: { color: C.white, fontWeight: 'bold' },
 });

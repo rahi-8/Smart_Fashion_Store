@@ -1,11 +1,11 @@
-// app/(tabs)/cart.tsx - bKash QR Payment System (Complete)
+// app/(tabs)/cart.tsx 
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   Image, Alert, Modal, TextInput, ScrollView, ActivityIndicator,
-  RefreshControl, Animated, Dimensions, Platform, KeyboardAvoidingView,
-  Share, StatusBar
+  RefreshControl, Animated, Dimensions, Platform,
+  StatusBar
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -36,9 +36,13 @@ interface CartItem {
   image: string; discountPrice?: number; stock?: number; selected?: boolean;
 }
 
-interface Coupon {
-  code: string; discountPercent: number; minOrder: number;
-  description: string; isActive: boolean;
+interface AppliedCoupon {
+  code: string;
+  discountPercent: number;
+  minOrder: number;
+  description: string;
+  isActive: boolean;
+  type?: string;
 }
 
 interface Settings {
@@ -50,7 +54,7 @@ export default function CartScreen() {
   const router = useRouter();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [couponError, setCouponError] = useState('');
   const [showCouponInput, setShowCouponInput] = useState(false);
   const [step, setStep] = useState<'cart' | 'address' | 'payment'>('cart');
@@ -60,66 +64,65 @@ export default function CartScreen() {
     deliveryCharge: 60, minOrderForFreeDelivery: 800,
     currency: '৳', taxPercentage: 0, siteName: 'MyShop', contactNumber: '01XXXXXXXXX',
   });
+  
+  // Coupons from Appwrite
+  const [availableCouponsFromDB, setAvailableCouponsFromDB] = useState<any[]>([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
 
   // QR States
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [qrStep, setQrStep] = useState<'generate' | 'waiting' | 'success'>('generate');
-  const [qrGeneratedOtp, setQrGeneratedOtp] = useState('');
-  const [qrLoading, setQrLoading] = useState(false);
   const [paymentLink, setPaymentLink] = useState('');
   const [currentOrderId, setCurrentOrderId] = useState('');
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   
-  // Simulated Payment Page Modal (QR scan后用这个显示OTP)
-  const [simulatedPaymentModal, setSimulatedPaymentModal] = useState(false);
-  const [scannedPaymentData, setScannedPaymentData] = useState<any>(null);
-  const [scannedOtp, setScannedOtp] = useState('');
+  // OTP Modal
+  const [otpVisible, setOtpVisible] = useState(false);
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const successScale = useRef(new Animated.Value(0)).current;
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [otpTimer, setOtpTimer] = useState(120);
-  const [canResend, setCanResend] = useState(false);
 
   const [shippingAddress, setShippingAddress] = useState({
     fullName: '', phone: '', address: '', city: 'Sylhet', postalCode: '', landmark: '',
   });
 
-  const availableCoupons: Coupon[] = [
-    { code: 'SAVE10', discountPercent: 10, minOrder: 500, description: '10% off on ৳500+', isActive: true },
-    { code: 'SAVE20', discountPercent: 20, minOrder: 1000, description: '20% off on ৳1000+', isActive: true },
-    { code: 'WELCOME15', discountPercent: 15, minOrder: 300, description: '15% off first order', isActive: true },
-    { code: 'FREESHIP', discountPercent: 0, minOrder: 800, description: 'Free delivery on ৳800+', isActive: true },
-  ];
+  // Load coupons from Appwrite
+  const loadCouponsFromDB = async () => {
+    setLoadingCoupons(true);
+    try {
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.COUPONS,
+        [
+          Query.equal('isActive', [true]),
+          Query.orderAsc('code')
+        ]
+      );
+      
+      const today = new Date().toISOString().split('T')[0];
+      const validCoupons = response.documents.filter((doc: any) => {
+        return doc.validUntil >= today;
+      });
+      
+      setAvailableCouponsFromDB(validCoupons);
+    } catch (error: any) {
+      console.error('Error loading coupons:', error);
+      setAvailableCouponsFromDB([]);
+    } finally {
+      setLoadingCoupons(false);
+    }
+  };
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, friction: 7, useNativeDriver: true }),
     ]).start();
+    loadCouponsFromDB();
   }, []);
-
-  // OTP Timer
-  useEffect(() => {
-    if (qrStep === 'waiting') {
-      setOtpTimer(120);
-      setCanResend(false);
-      timerRef.current = setInterval(() => {
-        setOtpTimer(prev => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            setCanResend(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [qrStep]);
 
   const loadSettings = async () => {
     try {
@@ -203,20 +206,90 @@ export default function CartScreen() {
   const subtotal = calculateSubtotal(selectedItems);
   const deliveryFee = subtotal > settings.minOrderForFreeDelivery ? 0 : settings.deliveryCharge;
   const tax = (subtotal * settings.taxPercentage) / 100;
-  const discount = appliedCoupon ? (appliedCoupon.discountPercent * subtotal) / 100 : 0;
+  
+  // Calculate discount based on coupon type
+  const discount = appliedCoupon ? (
+    appliedCoupon.type === 'percentage' 
+      ? (appliedCoupon.discountPercent * subtotal) / 100 
+      : Math.min(appliedCoupon.discountPercent, subtotal)
+  ) : 0;
+  
   const total = subtotal + deliveryFee + tax - discount;
 
-  const applyCoupon = () => {
-    if (selectedCount === 0) { setCouponError('Please select at least one item'); return; }
-    if (!couponCode.trim()) { setCouponError('Please enter a coupon code'); return; }
-    const coupon = availableCoupons.find(c => c.code === couponCode.toUpperCase() && c.isActive);
-    if (!coupon) { setCouponError('Invalid coupon code'); return; }
-    if (subtotal < coupon.minOrder) { setCouponError(`Min order ৳${coupon.minOrder} required`); return; }
-    setAppliedCoupon(coupon);
-    setCouponError('');
-    setShowCouponInput(false);
-    Alert.alert('✅ Applied!', coupon.code === 'FREESHIP' ? 'Free delivery applied!' : `${coupon.discountPercent}% discount applied!`);
-    setCouponCode('');
+  // Apply coupon from Appwrite
+  const applyCouponFromDB = async (code: string) => {
+    if (selectedCount === 0) {
+      setCouponError('Please select at least one item');
+      return;
+    }
+    
+    if (!code.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+    
+    try {
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTIONS.COUPONS,
+        [
+          Query.equal('code', [code.toUpperCase()]),
+          Query.equal('isActive', [true])
+        ]
+      );
+      
+      if (response.documents.length === 0) {
+        setCouponError('Invalid coupon code');
+        return;
+      }
+      
+      const coupon = response.documents[0];
+      
+      // Expiry check
+      const today = new Date().toISOString().split('T')[0];
+      if (coupon.validUntil < today) {
+        setCouponError('Coupon has expired');
+        return;
+      }
+      
+      // Min order check
+      const minOrder = coupon.minOrderAmount || 0;
+      if (subtotal < minOrder) {
+        setCouponError(`Minimum order ৳${minOrder.toLocaleString()} required`);
+        return;
+      }
+      
+      // Usage limit check
+      if (coupon.usageLimit > 0 && (coupon.usedCount || 0) >= coupon.usageLimit) {
+        setCouponError('Coupon usage limit reached');
+        return;
+      }
+      
+      const appliedCouponData = {
+        code: coupon.code,
+        discountPercent: coupon.discount,
+        minOrder: coupon.minOrderAmount || 0,
+        description: coupon.description || (coupon.type === 'percentage' ? `${coupon.discount}% OFF` : `৳${coupon.discount} OFF`),
+        isActive: true,
+        type: coupon.type,
+      };
+      
+      setAppliedCoupon(appliedCouponData);
+      setCouponError('');
+      setShowCouponInput(false);
+      
+      if (coupon.type === 'percentage') {
+        Alert.alert('✅ Applied!', `${coupon.discount}% discount applied!`);
+      } else {
+        Alert.alert('✅ Applied!', `৳${coupon.discount} discount applied!`);
+      }
+      
+      setCouponCode('');
+      
+    } catch (error: any) {
+      console.error('Error applying coupon:', error);
+      setCouponError('Failed to verify coupon');
+    }
   };
 
   const removeCoupon = () => { setAppliedCoupon(null); setCouponCode(''); };
@@ -237,59 +310,44 @@ export default function CartScreen() {
     setStep('payment');
   };
 
-  // ─── QR Payment System ──────────────────────────────────────────────────
+  // Generate QR payment
   const generateQRPayment = () => {
     const orderId = 'ORD_' + Date.now();
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     
     const qrData = JSON.stringify({
-      type: 'BKASH_PAYMENT',
       orderId: orderId,
-      amount: Math.round(total),
-      currency: settings.currency,
-      merchantName: settings.siteName,
-      timestamp: Date.now(),
-      otp: otp
+      otp: otp,
+      amount: Math.round(total)
     });
 
     setCurrentOrderId(orderId);
+    setGeneratedOtp(otp);
     setPaymentLink(qrData);
-    setQrGeneratedOtp(otp);
     setQrStep('generate');
     setQrModalVisible(true);
   };
 
-  // Simulate QR scan - shows OTP page
-  const simulateQRScan = (qrData: string) => {
-    try {
-      const parsedData = JSON.parse(qrData);
-      if (parsedData.type === 'BKASH_PAYMENT') {
-        setScannedPaymentData(parsedData);
-        setScannedOtp('');
-        setSimulatedPaymentModal(true);
-      }
-    } catch (error) {
-      Alert.alert('Invalid QR', 'Unable to process QR code');
-    }
+  const showOtpInput = () => {
+    setQrModalVisible(false);
+    setEnteredOtp('');
+    setOtpVisible(true);
   };
 
-  const verifyScannedOtp = () => {
-    if (scannedOtp !== scannedPaymentData?.otp) {
-      Alert.alert('❌ Invalid OTP', 'The code does not match. Please try again.');
-      return;
+  const verifyOtp = () => {
+    if (enteredOtp === generatedOtp) {
+      setOtpVisible(false);
+      setQrStep('success');
+      Animated.spring(successScale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+      
+      setTimeout(() => {
+        placeOrder();
+        setQrStep('generate');
+      }, 2000);
+    } else {
+      Alert.alert('❌ Invalid OTP', 'The OTP you entered is incorrect. Please try again.');
+      setEnteredOtp('');
     }
-    
-    setSimulatedPaymentModal(false);
-    setPaymentConfirmed(true);
-    setQrStep('success');
-    Animated.spring(successScale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
-    
-    setTimeout(() => {
-      setQrModalVisible(false);
-      placeOrder();
-      setQrStep('generate');
-      setPaymentConfirmed(false);
-    }, 2000);
   };
 
   const placeOrder = async () => {
@@ -312,7 +370,7 @@ export default function CartScreen() {
         couponDiscount: appliedCoupon?.discountPercent || null,
         trackingNumber: null, courierName: null,
         notes: shippingAddress.landmark ? `Landmark: ${shippingAddress.landmark}` : null,
-        bkashTransactionId: 'BKASH_' + Date.now().toString().slice(-10),
+        bkashTransactionId: currentOrderId,
       };
 
       await databases.createDocument(DATABASE_ID, COLLECTIONS.ORDERS, ID.unique(), orderData);
@@ -334,62 +392,47 @@ export default function CartScreen() {
     } finally { setLoading(false); }
   };
 
-  const onRefresh = async () => { setRefreshing(true); await loadCart(); await loadSettings(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await loadCart(); await loadSettings(); await loadCouponsFromDB(); setRefreshing(false); };
 
-  // ─── Simulated Payment Page Modal (Shows OTP when QR is scanned) ────────
-  const renderSimulatedPaymentModal = () => (
-    <Modal animationType="slide" transparent visible={simulatedPaymentModal}
-      onRequestClose={() => setSimulatedPaymentModal(false)}>
-      <View style={styles.modalBg}>
-        <View style={[styles.qrSheet, { maxHeight: height * 0.75 }]}>
-          <View style={styles.sheetHandle} />
-          
-          <View style={styles.paymentPageHeader}>
-            <View style={styles.paymentPageLogo}>
-              <LinearGradient colors={[THEME.primary, THEME.primaryDark]} style={styles.paymentPageLogoGrad}>
-                <Ionicons name="logo-buffer" size={24} color="#fff" />
-              </LinearGradient>
-              <Text style={styles.paymentPageMerchant}>bKash Payment</Text>
-            </View>
-            <TouchableOpacity onPress={() => setSimulatedPaymentModal(false)} style={styles.closeBtn}>
-              <Ionicons name="close" size={20} color={THEME.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.paymentPageAmountBox}>
-            <Text style={styles.paymentPageAmountLabel}>Amount to Pay</Text>
-            <Text style={styles.paymentPageAmount}>
-              {scannedPaymentData?.currency || settings.currency}{scannedPaymentData?.amount?.toLocaleString()}
-            </Text>
-            <Text style={styles.paymentPageOrderId}>Order: {scannedPaymentData?.orderId}</Text>
-          </View>
-
-          <View style={styles.paymentPageOtpBox}>
-            <View style={styles.paymentPageOtpHeader}>
-              <Ionicons name="key-outline" size={20} color={THEME.warning} />
-              <Text style={styles.paymentPageOtpTitle}>Your OTP Code</Text>
-            </View>
-            <Text style={styles.paymentPageOtpValue}>{scannedPaymentData?.otp}</Text>
-            <Text style={styles.paymentPageOtpHint}>
-              Enter this OTP in the merchant's app to complete payment
-            </Text>
-          </View>
-
-          <View style={styles.paymentPageInfoBox}>
-            <View style={styles.paymentPageInfoRow}>
-              <Text style={styles.paymentPageInfoLabel}>Merchant</Text>
-              <Text style={styles.paymentPageInfoValue}>{scannedPaymentData?.merchantName || settings.siteName}</Text>
-            </View>
-            <View style={styles.paymentPageInfoRow}>
-              <Text style={styles.paymentPageInfoLabel}>Order ID</Text>
-              <Text style={styles.paymentPageInfoValue}>{scannedPaymentData?.orderId}</Text>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.paymentPageCloseBtn} onPress={() => setSimulatedPaymentModal(false)}>
-            <LinearGradient colors={['#333', '#222']} style={styles.paymentPageCloseGrad}>
-              <Text style={styles.paymentPageCloseText}>Close</Text>
+  // ─── OTP Input Modal ─────────────────────────────────────────────────
+  const renderOtpModal = () => (
+    <Modal animationType="fade" transparent visible={otpVisible}
+      onRequestClose={() => setOtpVisible(false)}>
+      <View style={styles.otpModalOverlay}>
+        <View style={styles.otpCard}>
+          <View style={styles.otpIconWrap}>
+            <LinearGradient colors={[THEME.primary, THEME.primaryDark]} style={styles.otpIconCircle}>
+              <Ionicons name="key-outline" size={32} color="#fff" />
             </LinearGradient>
+          </View>
+          
+          <Text style={styles.otpTitle}>Enter OTP</Text>
+          <Text style={styles.otpSubtitle}>Please enter the 6-digit OTP</Text>
+          
+          <TextInput
+            style={styles.otpInput}
+            placeholder="000000"
+            placeholderTextColor={THEME.textDim}
+            keyboardType="number-pad"
+            maxLength={6}
+            value={enteredOtp}
+            onChangeText={setEnteredOtp}
+            autoFocus
+          />
+          
+          <TouchableOpacity 
+            style={[styles.verifyOtpBtn, !enteredOtp && styles.verifyOtpBtnDisabled]}
+            onPress={verifyOtp}
+            disabled={!enteredOtp}>
+            <LinearGradient colors={[THEME.primary, THEME.primaryDark]} style={styles.verifyOtpGrad}>
+              <Text style={styles.verifyOtpText}>Verify OTP</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.cancelOtpBtn}
+            onPress={() => setOtpVisible(false)}>
+            <Text style={styles.cancelOtpText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -405,94 +448,72 @@ export default function CartScreen() {
           <View style={styles.sheetHandle} />
 
           {qrStep === 'generate' && (
-            <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.qrSheetHeader}>
-                  <View>
-                    <View style={styles.qrHeaderBadge}>
-                      <Text style={styles.qrHeaderBadgeText}>BKASH QR</Text>
-                    </View>
-                    <Text style={styles.qrHeaderTitle}>Scan to Pay</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.qrSheetHeader}>
+                <View>
+                  <View style={styles.qrHeaderBadge}>
+                    <Text style={styles.qrHeaderBadgeText}>BKASH QR</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setQrModalVisible(false)} style={styles.closeBtn}>
-                    <Ionicons name="close" size={20} color={THEME.textMuted} />
-                  </TouchableOpacity>
+                  <Text style={styles.qrHeaderTitle}>Scan to Pay</Text>
                 </View>
-
-                <View style={styles.qrAmountRow}>
-                  <Text style={styles.qrAmountLabel}>Total Amount</Text>
-                  <Text style={styles.qrAmountValue}>{settings.currency}{Math.round(total).toLocaleString()}</Text>
-                </View>
-
-                <View style={styles.realQrBox}>
-                  <View style={styles.realQrInner}>
-                    <QRCode
-                      value={paymentLink || JSON.stringify({ orderId: currentOrderId, amount: total })}
-                      size={200}
-                      color="#0F0F1A"
-                      backgroundColor="#FFFFFF"
-                      quietZone={10}
-                    />
-                  </View>
-                  <View style={styles.qrScanHintRow}>
-                    <Ionicons name="scan-outline" size={16} color={THEME.success} />
-                    <Text style={styles.qrBoxNote}>Customer scan করলে OTP দেখাবে</Text>
-                  </View>
-                </View>
-
-                {/* Demo Scan Button */}
-                <TouchableOpacity style={styles.demoScanBtn} onPress={() => simulateQRScan(paymentLink)}>
-                  <LinearGradient colors={['#2196F3', '#0D47A1']} style={styles.demoScanGrad}>
-                    <Ionicons name="scan-circle" size={20} color="#fff" />
-                    <Text style={styles.demoScanText}>📱 Simulate Customer Scan (Demo)</Text>
-                  </LinearGradient>
+                <TouchableOpacity onPress={() => setQrModalVisible(false)} style={styles.closeBtn}>
+                  <Ionicons name="close" size={20} color={THEME.textMuted} />
                 </TouchableOpacity>
+              </View>
 
-                <View style={styles.infoCard}>
-                  <View style={styles.infoRow}><Text style={styles.infoLabel}>Order ID</Text><Text style={styles.infoValue}>{currentOrderId}</Text></View>
-                  <View style={styles.infoDivider} />
-                  <View style={styles.infoRow}><Text style={styles.infoLabel}>Merchant</Text><Text style={styles.infoValue}>{settings.siteName}</Text></View>
-                  <View style={styles.infoDivider} />
-                  <View style={styles.infoRow}><Text style={styles.infoLabel}>Items</Text><Text style={styles.infoValue}>{selectedCount} item(s)</Text></View>
+              <View style={styles.qrAmountRow}>
+                <Text style={styles.qrAmountLabel}>Total Amount</Text>
+                <Text style={styles.qrAmountValue}>{settings.currency}{Math.round(total).toLocaleString()}</Text>
+              </View>
+
+              <View style={styles.qrCodeWrapper}>
+                <View style={styles.qrCodeContainer}>
+                  <QRCode
+                    value={paymentLink}
+                    size={200}
+                    color="#0F0F1A"
+                    backgroundColor="#FFFFFF"
+                    quietZone={8}
+                  />
                 </View>
+              </View>
 
-                {/* OTP Input Section - Enter OTP from customer */}
-                <View style={styles.otpInputSection}>
-                  <Text style={styles.otpInputLabel}>Enter OTP from Customer</Text>
-                  <View style={styles.otpInputRow}>
-                    <TextInput
-                      style={styles.otpInputField}
-                      placeholder="000000"
-                      placeholderTextColor={THEME.textDim}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      value={qrGeneratedOtp === 'verified' ? '' : undefined}
-                      onChangeText={(text) => {
-                        if (text === scannedPaymentData?.otp) {
-                          setQrStep('success');
-                          Animated.spring(successScale, { toValue: 1, friction: 5, useNativeDriver: true }).start();
-                          setTimeout(() => {
-                            setQrModalVisible(false);
-                            placeOrder();
-                            setQrStep('generate');
-                          }, 2000);
-                        } else if (text.length === 6 && text !== scannedPaymentData?.otp) {
-                          Alert.alert('❌ Invalid OTP', 'The code does not match. Please try again.');
-                        }
-                      }}
-                    />
-                  </View>
-                  <Text style={styles.otpInputHint}>
-                    Customer scan করলে OTP দেখাবে, সেটি এখানে দিন
-                  </Text>
+              <View style={styles.instructionsBox}>
+                <Text style={styles.instructionsTitle}>How to pay:</Text>
+                <View style={styles.instructionItem}>
+                  <View style={styles.instructionNumber}><Text style={styles.instructionNumberText}>1</Text></View>
+                  <Text style={styles.instructionText}>Open bKash App</Text>
                 </View>
+                <View style={styles.instructionItem}>
+                  <View style={styles.instructionNumber}><Text style={styles.instructionNumberText}>2</Text></View>
+                  <Text style={styles.instructionText}>Tap on "Scan QR"</Text>
+                </View>
+                <View style={styles.instructionItem}>
+                  <View style={styles.instructionNumber}><Text style={styles.instructionNumberText}>3</Text></View>
+                  <Text style={styles.instructionText}>Scan this QR code</Text>
+                </View>
+                <View style={styles.instructionItem}>
+                  <View style={styles.instructionNumber}><Text style={styles.instructionNumberText}>4</Text></View>
+                  <Text style={styles.instructionText}>Enter PIN to confirm payment</Text>
+                </View>
+              </View>
 
-                <View style={{ height: 30 }} />
-              </ScrollView>
-            </Animated.View>
+              <TouchableOpacity 
+                style={styles.otpButton}
+                onPress={showOtpInput}>
+                <LinearGradient colors={[THEME.success, '#00A86B']} style={styles.otpButtonGrad}>
+                  <Ionicons name="checkmark-done-circle" size={20} color="#fff" />
+                  <Text style={styles.otpButtonText}>I have received OTP</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={styles.noteBox}>
+                <Ionicons name="information-circle" size={16} color={THEME.warning} />
+                <Text style={styles.noteText}>After payment, you will receive an OTP on your bKash registered mobile number</Text>
+              </View>
+            </ScrollView>
           )}
 
-          {/* Success Step */}
           {qrStep === 'success' && (
             <View style={styles.successContainer}>
               <Animated.View style={[styles.successIconWrap, { transform: [{ scale: successScale }] }]}>
@@ -500,9 +521,9 @@ export default function CartScreen() {
                   <Ionicons name="checkmark" size={52} color="#fff" />
                 </LinearGradient>
               </Animated.View>
-              <Animated.Text style={[styles.successTitle, { transform: [{ scale: successScale }] }]}>Payment Confirmed!</Animated.Text>
+              <Animated.Text style={[styles.successTitle, { transform: [{ scale: successScale }] }]}>Payment Successful!</Animated.Text>
               <Text style={styles.successAmount}>{settings.currency}{Math.round(total).toLocaleString()}</Text>
-              <Text style={styles.successSub}>Placing your order now...</Text>
+              <Text style={styles.successSub}>Placing your order...</Text>
               <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
             </View>
           )}
@@ -585,7 +606,7 @@ export default function CartScreen() {
         <View style={{ width: 40 }} />
       </LinearGradient>
 
-      {/* Step 1: Cart */}
+      {/*  Cart */}
       {step === 'cart' && (
         cartItems.length > 0 ? (
           <>
@@ -617,24 +638,59 @@ export default function CartScreen() {
                       <View style={styles.couponInputRow}>
                         <TextInput style={styles.couponInput} placeholder="SAVE10, FREESHIP..." placeholderTextColor={THEME.textDim}
                           value={couponCode} onChangeText={(t) => { setCouponCode(t.toUpperCase()); setCouponError(''); }} autoCapitalize="characters" />
-                        <TouchableOpacity onPress={applyCoupon} style={styles.couponApplyBtn}><Text style={styles.couponApplyText}>Apply</Text></TouchableOpacity>
+                        <TouchableOpacity onPress={() => applyCouponFromDB(couponCode)} style={styles.couponApplyBtn}>
+                          <Text style={styles.couponApplyText}>Apply</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity onPress={() => setShowCouponInput(false)}><Ionicons name="close" size={20} color={THEME.textMuted} /></TouchableOpacity>
                       </View>
                     )}
                     {couponError && <Text style={styles.couponError}>{couponError}</Text>}
+                    
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-                      {availableCoupons.map((c) => (
-                        <TouchableOpacity key={c.code} style={styles.couponChip} onPress={() => { setCouponCode(c.code); applyCoupon(); }}>
-                          <Text style={styles.couponChipCode}>{c.code}</Text><Text style={styles.couponChipDesc} numberOfLines={1}>{c.description}</Text>
-                        </TouchableOpacity>
-                      ))}
+                      {loadingCoupons ? (
+                        <View style={{ flexDirection: 'row', paddingHorizontal: 10 }}>
+                          <ActivityIndicator size="small" color={THEME.primary} />
+                          <Text style={{ fontSize: 11, color: THEME.textMuted, marginLeft: 8 }}>Loading coupons...</Text>
+                        </View>
+                      ) : availableCouponsFromDB.length === 0 ? (
+                        <Text style={{ fontSize: 11, color: THEME.textMuted, paddingHorizontal: 10 }}>No active coupons available</Text>
+                      ) : (
+                        availableCouponsFromDB.map((c) => {
+                          const discountText = c.type === 'percentage' 
+                            ? `${c.discount}% OFF` 
+                            : `৳${c.discount.toLocaleString()} OFF`;
+                          const minText = c.minOrderAmount ? `(${c.minOrderAmount.toLocaleString()}+)` : '';
+                          
+                          return (
+                            <TouchableOpacity 
+                              key={c.$id} 
+                              style={styles.couponChip} 
+                              onPress={() => {
+                                setCouponCode(c.code);
+                                applyCouponFromDB(c.code);
+                              }}
+                            >
+                              <Text style={styles.couponChipCode}>{c.code}</Text>
+                              <Text style={styles.couponChipDesc} numberOfLines={1}>
+                                {discountText} {minText}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
                     </ScrollView>
                   </>
                 ) : (
                   <View style={styles.appliedCoupon}>
                     <Ionicons name="checkmark-circle" size={22} color={THEME.success} />
-                    <View style={{ flex: 1 }}><Text style={styles.appliedCouponCode}>{appliedCoupon.code} — {appliedCoupon.discountPercent > 0 ? `${appliedCoupon.discountPercent}% OFF` : 'FREE DELIVERY'}</Text>
-                      <Text style={styles.appliedCouponDesc}>{appliedCoupon.description}</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.appliedCouponCode}>
+                        {appliedCoupon.code} — {appliedCoupon.type === 'percentage' 
+                          ? `${appliedCoupon.discountPercent}% OFF` 
+                          : `৳${appliedCoupon.discountPercent} OFF`}
+                      </Text>
+                      <Text style={styles.appliedCouponDesc}>{appliedCoupon.description}</Text>
+                    </View>
                     <TouchableOpacity onPress={removeCoupon}><Ionicons name="close-circle" size={22} color={THEME.primary} /></TouchableOpacity>
                   </View>
                 )}
@@ -661,7 +717,7 @@ export default function CartScreen() {
         ) : <EmptyCart />
       )}
 
-      {/* Step 2: Address Form */}
+      {/* Address Form */}
       {step === 'address' && (
         <ScrollView style={styles.addressContainer} showsVerticalScrollIndicator={false}>
           <View style={styles.addressCard}>
@@ -705,7 +761,7 @@ export default function CartScreen() {
         </ScrollView>
       )}
 
-      {/* Step 3: Payment */}
+      {/* Payment */}
       {step === 'payment' && (
         <ScrollView style={styles.paymentContainer}>
           <View style={styles.paymentCard}>
@@ -741,7 +797,7 @@ export default function CartScreen() {
       )}
 
       {renderQRModal()}
-      {renderSimulatedPaymentModal()}
+      {renderOtpModal()}
     </View>
   );
 }
@@ -846,66 +902,54 @@ const styles = StyleSheet.create({
   backToAddressBtn: { alignItems: 'center', padding: 12 },
   backToAddressText: { color: THEME.textMuted, fontSize: 14 },
   
-  // Modal Styles
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'flex-end' },
+  // QR Modal Styles
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
   sheetHandle: { width: 36, height: 4, backgroundColor: THEME.border, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: THEME.glass, justifyContent: 'center', alignItems: 'center' },
-  backBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: THEME.glass, justifyContent: 'center', alignItems: 'center' },
-  qrSheet: { backgroundColor: THEME.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, maxHeight: height * 0.9, paddingTop: 14 },
+  qrSheet: { backgroundColor: THEME.card, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, maxHeight: height * 0.85, paddingTop: 14 },
   qrSheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   qrHeaderBadge: { backgroundColor: '#E2136E20', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 4 },
   qrHeaderBadgeText: { fontSize: 9, fontWeight: '800', color: THEME.primary, letterSpacing: 1 },
   qrHeaderTitle: { fontSize: 20, fontWeight: '700', color: THEME.text },
-  qrAmountRow: { backgroundColor: THEME.surface, borderRadius: 16, padding: 16, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: THEME.border },
+  qrAmountRow: { backgroundColor: THEME.surface, borderRadius: 16, padding: 12, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: THEME.border },
   qrAmountLabel: { fontSize: 12, color: THEME.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 },
-  qrAmountValue: { fontSize: 32, fontWeight: '800', color: THEME.primary },
-  realQrBox: { alignItems: 'center', marginBottom: 16 },
-  realQrInner: { backgroundColor: '#FFFFFF', padding: 12, borderRadius: 20, alignItems: 'center', justifyContent: 'center', shadowColor: THEME.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
-  qrScanHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, justifyContent: 'center' },
-  qrBoxNote: { fontSize: 12, color: THEME.textMuted, textAlign: 'center' },
-  demoScanBtn: { borderRadius: 14, overflow: 'hidden', marginBottom: 16 },
-  demoScanGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 8 },
-  demoScanText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  infoCard: { backgroundColor: THEME.surface, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: THEME.border, marginBottom: 16 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
-  infoLabel: { fontSize: 12, color: THEME.textMuted },
-  infoValue: { fontSize: 12, fontWeight: '600', color: THEME.text, maxWidth: '60%', textAlign: 'right' },
-  infoDivider: { height: 1, backgroundColor: THEME.border },
+  qrAmountValue: { fontSize: 28, fontWeight: '800', color: THEME.primary },
+  qrCodeWrapper: { alignItems: 'center', marginBottom: 20 },
+  qrCodeContainer: { backgroundColor: '#FFFFFF', padding: 12, borderRadius: 20 },
   
-  // OTP Input Section
-  otpInputSection: { marginBottom: 20 },
-  otpInputLabel: { fontSize: 14, fontWeight: '600', color: THEME.text, marginBottom: 12, textAlign: 'center' },
-  otpInputRow: { alignItems: 'center' },
-  otpInputField: { width: 200, borderWidth: 2, borderColor: THEME.primary, borderRadius: 16, padding: 14, fontSize: 24, fontWeight: '700', textAlign: 'center', color: THEME.text, backgroundColor: THEME.surface, letterSpacing: 8 },
-  otpInputHint: { fontSize: 11, color: THEME.textDim, textAlign: 'center', marginTop: 12 },
+  instructionsBox: { backgroundColor: THEME.surface, borderRadius: 16, padding: 16, marginBottom: 16 },
+  instructionsTitle: { fontSize: 14, fontWeight: '700', color: THEME.text, marginBottom: 12 },
+  instructionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  instructionNumber: { width: 24, height: 24, borderRadius: 12, backgroundColor: THEME.primary, justifyContent: 'center', alignItems: 'center' },
+  instructionNumberText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  instructionText: { fontSize: 13, color: THEME.text, flex: 1 },
+  
+  otpButton: { borderRadius: 14, overflow: 'hidden', marginBottom: 16 },
+  otpButtonGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, gap: 8 },
+  otpButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  
+  noteBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFB80010', padding: 12, borderRadius: 12, marginBottom: 16 },
+  noteText: { flex: 1, fontSize: 11, color: THEME.warning },
+  
+  // OTP Modal Styles
+  otpModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+  otpCard: { width: width * 0.85, backgroundColor: THEME.card, borderRadius: 24, padding: 24, alignItems: 'center' },
+  otpIconWrap: { marginBottom: 20 },
+  otpIconCircle: { width: 70, height: 70, borderRadius: 35, justifyContent: 'center', alignItems: 'center' },
+  otpTitle: { fontSize: 22, fontWeight: '800', color: THEME.text, marginBottom: 8 },
+  otpSubtitle: { fontSize: 13, color: THEME.textMuted, textAlign: 'center', marginBottom: 24 },
+  otpInput: { width: '100%', backgroundColor: THEME.surface, borderWidth: 1, borderColor: THEME.border, borderRadius: 14, padding: 14, fontSize: 20, textAlign: 'center', color: THEME.text, marginBottom: 20, letterSpacing: 8 },
+  verifyOtpBtn: { width: '100%', borderRadius: 14, overflow: 'hidden', marginBottom: 12 },
+  verifyOtpBtnDisabled: { opacity: 0.5 },
+  verifyOtpGrad: { padding: 14, alignItems: 'center' },
+  verifyOtpText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  cancelOtpBtn: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 12 },
+  cancelOtpText: { color: THEME.textMuted, fontSize: 14, fontWeight: '500' },
   
   successContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 },
-  confettiDot: { position: 'absolute', width: 8, height: 8, borderRadius: 4, opacity: 0.8 },
   successIconWrap: { marginBottom: 20 },
   successIconCircle: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center' },
   successTitle: { fontSize: 26, fontWeight: '800', color: THEME.success, marginBottom: 8 },
   successAmount: { fontSize: 38, fontWeight: '900', color: THEME.text, marginBottom: 8 },
   successSub: { fontSize: 14, color: THEME.textMuted },
-  
-  // Payment Page Modal Styles
-  paymentPageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  paymentPageLogo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  paymentPageLogoGrad: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  paymentPageMerchant: { fontSize: 16, fontWeight: '700', color: THEME.text },
-  paymentPageAmountBox: { backgroundColor: THEME.surface, borderRadius: 20, padding: 20, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: THEME.border },
-  paymentPageAmountLabel: { fontSize: 12, color: THEME.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  paymentPageAmount: { fontSize: 36, fontWeight: '800', color: THEME.primary, marginBottom: 8 },
-  paymentPageOrderId: { fontSize: 12, color: THEME.textMuted },
-  paymentPageOtpBox: { backgroundColor: '#FFB80015', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1.5, borderColor: '#FFB80050', alignItems: 'center' },
-  paymentPageOtpHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  paymentPageOtpTitle: { fontSize: 13, fontWeight: '600', color: THEME.warning },
-  paymentPageOtpValue: { fontSize: 42, fontWeight: '900', color: THEME.warning, letterSpacing: 10, marginBottom: 12 },
-  paymentPageOtpHint: { fontSize: 11, color: THEME.textMuted, textAlign: 'center' },
-  paymentPageInfoBox: { backgroundColor: THEME.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: THEME.border, marginBottom: 20 },
-  paymentPageInfoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
-  paymentPageInfoLabel: { fontSize: 12, color: THEME.textMuted },
-  paymentPageInfoValue: { fontSize: 12, fontWeight: '500', color: THEME.text },
-  paymentPageCloseBtn: { borderRadius: 14, overflow: 'hidden' },
-  paymentPageCloseGrad: { padding: 14, alignItems: 'center' },
-  paymentPageCloseText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
